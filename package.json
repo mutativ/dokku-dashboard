@@ -1,0 +1,27 @@
+{
+  "name": "dokku-dashboard",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json && tailwindcss -i src/styles/input.css -o dist/public/styles.css --minify && cp -r public/* dist/public/",
+    "start": "node dist/index.js",
+    "preview": "docker build --build-arg APP_VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) -t dokku-dashboard-preview . && docker rm -f $(docker ps -q --filter publish=4200) 2>/dev/null; docker run --name dokku-dashboard-preview --rm --env-file .env -p 4200:4200 dokku-dashboard-preview",
+    "preview:stop": "docker rm -f $(docker ps -q --filter publish=4200) 2>/dev/null || true",
+    "hash-password": "tsx src/hash-password.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "google-auth-library": "^10.5.0",
+    "hono": "^4.7.0",
+    "ssh2": "^1.16.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.2",
+    "@types/ssh2": "^1.15.0",
+    "tailwindcss": "^3.4.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

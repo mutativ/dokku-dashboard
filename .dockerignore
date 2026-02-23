@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+*.pem
+*.key
+id_ed25519*
+.git
+.tmp
+.DS_Store
