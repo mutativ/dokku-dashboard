@@ -1,0 +1,94 @@
+# Deploys to Dokku on push to main.
+#
+# Required secrets (set in repo Settings → Secrets):
+#   DOKKU_SSH_PRIVATE_KEY   — SSH key authorized on the Dokku VPS
+#   DOKKU_DASHBOARD_ENV     — newline-separated KEY=VALUE env vars for the app
+#
+# Required vars (set in repo Settings → Variables):
+#   DOKKU_HOST              — VPS hostname/IP
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOKKU_HOST: ${{ vars.DOKKU_HOST }}
+  APP_NAME: dokku-dashboard
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-dokku-dashboard
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DOKKU_SSH_PRIVATE_KEY }}" > ~/.ssh/dokku_key
+          chmod 600 ~/.ssh/dokku_key
+          ssh-keyscan -H ${{ env.DOKKU_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create app and configure (idempotent)
+        env:
+          DOMAIN: dokku.stakedao.org
+          ENV_FILE: ${{ secrets.DOKKU_DASHBOARD_ENV }}
+        run: |
+          ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            apps:create "$APP_NAME" 2>/dev/null || true
+
+          # Set env vars from secret (KEY=VALUE lines)
+          if [ -n "$ENV_FILE" ]; then
+            CONFIG_ARGS=()
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              case "$line" in \#*) continue ;; esac
+              CONFIG_ARGS+=("$line")
+            done <<< "$ENV_FILE"
+            if [ ${#CONFIG_ARGS[@]} -gt 0 ]; then
+              ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+                config:set "$APP_NAME" "${CONFIG_ARGS[@]}" --no-restart
+            fi
+          fi
+
+          # Ports
+          ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            ports:clear "$APP_NAME" 2>/dev/null || true
+          ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            ports:add "$APP_NAME" http:80:4200
+          ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            ports:add "$APP_NAME" https:443:4200
+
+          # Domain
+          ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            domains:clear "$APP_NAME" 2>/dev/null || true
+          ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            domains:add "$APP_NAME" "$DOMAIN"
+
+          # Builder: use the Dockerfile at repo root
+          ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            builder:set "$APP_NAME" selected dockerfile
+
+      - name: Deploy
+        uses: dokku/github-action@master
+        with:
+          git_remote_url: ssh://dokku@${{ env.DOKKU_HOST }}:22/${{ env.APP_NAME }}
+          ssh_private_key: ${{ secrets.DOKKU_SSH_PRIVATE_KEY }}
+          git_push_flags: '--force'
+
+      - name: Enable SSL (first deploy only)
+        run: |
+          ACTIVE=$(ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+            letsencrypt:active "$APP_NAME" 2>/dev/null || echo "false")
+          if [ "$ACTIVE" != "true" ]; then
+            ssh -i ~/.ssh/dokku_key dokku@${{ env.DOKKU_HOST }} \
+              letsencrypt:enable "$APP_NAME" 2>/dev/null || true
+          fi
