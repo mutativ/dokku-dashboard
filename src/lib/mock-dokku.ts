@@ -20,6 +20,7 @@ const MOCK_APPS: AppInfo[] = [
     processTypes: ["worker"],
     processTypeCounts: { worker: 1 },
     domains: [],
+      appType: "api",
   },
   {
     name: "api-cron",
@@ -29,6 +30,7 @@ const MOCK_APPS: AppInfo[] = [
     processTypes: ["cron"],
     processTypeCounts: { cron: 0 },
     domains: [],
+      appType: "api",
   },
   // frontend — standalone
   {
@@ -58,6 +60,7 @@ const MOCK_APPS: AppInfo[] = [
     processTypes: ["worker"],
     processTypeCounts: { worker: 0 },
     domains: [],
+      appType: "api",
   },
 ];
 
@@ -161,7 +164,7 @@ export class MockDokkuClient extends DokkuClient {
   }
 
   override async appsCreate(name: string): Promise<string> {
-    MOCK_APPS.push({ name, status: "not deployed", deployed: false, processCount: 0, processTypes: [], processTypeCounts: {}, domains: [] });
+    MOCK_APPS.push({ name, status: "not deployed", deployed: false, processCount: 0, processTypes: [], processTypeCounts: {}, domains: [], appType: "api" });
     return `Creating ${name}... done`;
   }
 
