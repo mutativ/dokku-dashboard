@@ -151,16 +151,15 @@ export class DokkuClient {
       apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [] });
     }
 
-    // Fetch all domains in parallel
-    await Promise.all(
-      apps.map(async (app) => {
-        try {
-          app.domains = await this.domainsReport(app.name);
-        } catch {
-          app.domains = [];
-        }
-      }),
-    );
+    // Fetch all domains in a single SSH call to avoid channel exhaustion
+    try {
+      const domainsMap = await this.domainsReportAll();
+      for (const app of apps) {
+        app.domains = domainsMap.get(app.name) ?? [];
+      }
+    } catch {
+      // leave domains empty if batch call fails
+    }
 
     return this.setCache("apps:list", apps);
   }
@@ -289,6 +288,28 @@ export class DokkuClient {
   }
 
   // ── Domains ────────────────────────────────────────────────────────────
+
+  /** Fetch domains for all apps in a single SSH call. */
+  async domainsReportAll(): Promise<Map<string, string[]>> {
+    const out = await this.exec(["domains:report"]);
+    const result = new Map<string, string[]>();
+    let currentApp: string | null = null;
+    for (const line of out.trim().split("\n")) {
+      const headerMatch = line.match(/=====> (\S+) domains information/);
+      if (headerMatch) {
+        currentApp = headerMatch[1];
+        result.set(currentApp, []);
+        continue;
+      }
+      if (!currentApp) continue;
+      const match = line.match(/Domains app vhosts:\s+(.+)/);
+      if (match) {
+        const domains = match[1].trim().split(/\s+/).filter(Boolean);
+        result.set(currentApp, domains);
+      }
+    }
+    return result;
+  }
 
   async domainsReport(name: string): Promise<string[]> {
     const out = await this.exec(["domains:report", name]);
