@@ -32,7 +32,7 @@ function appRow(app: AppInfo) {
         <a href="/apps/${app.name}" class="text-blue-600 hover:text-blue-800 font-medium">${app.name}</a>
         ${app.domains.length > 0
           ? html`<div class="flex flex-wrap gap-1 mt-0.5">${app.domains.map((d) => html`<a href="https://${d}" target="_blank" rel="noopener" class="text-[11px] text-gray-400 hover:text-blue-500 font-mono leading-none">${d}</a>`)}</div>`
-          : html`<div class="mt-0.5"><span class="text-[10px] text-gray-300 font-mono leading-none">internal</span></div>`}
+          : html``}
       </td>
       <td class="px-4 py-3">${statusBadge(app.status)}</td>
       <td class="px-4 py-3">
