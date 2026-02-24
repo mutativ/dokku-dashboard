@@ -2,34 +2,36 @@ import { html } from "hono/html";
 import type { AppInfo } from "../../lib/dokku.js";
 import { pageHeader } from "../components/nav.js";
 import { table } from "../components/table.js";
-import { statusBadge, processBadge } from "../components/badge.js";
+import { statusBadge, processBadge, typeBadge } from "../components/badge.js";
 import { actionBtn } from "../components/action-btn.js";
 
-function appPrefix(name: string): string {
-  const idx = name.indexOf("-");
-  return idx > 0 ? name.slice(0, idx) : name;
-}
+const TYPE_ORDER = ["api", "bot", "indexer"] as const;
+const TYPE_LABELS: Record<string, string> = {
+  api:     "APIs",
+  bot:     "Bots",
+  indexer: "Indexers",
+};
 
-function groupAppsByPrefix(apps: AppInfo[]): Array<{ prefix: string; apps: AppInfo[]; showHeader: boolean }> {
+function groupAppsByType(apps: AppInfo[]): Array<{ type: string; apps: AppInfo[] }> {
   const map = new Map<string, AppInfo[]>();
+  for (const t of TYPE_ORDER) map.set(t, []);
   for (const app of apps) {
-    const prefix = appPrefix(app.name);
-    const group = map.get(prefix) ?? [];
+    const group = map.get(app.appType) ?? map.get("api")!;
     group.push(app);
-    map.set(prefix, group);
   }
-  return Array.from(map.entries()).map(([prefix, groupApps]) => ({
-    prefix,
-    apps: groupApps,
-    showHeader: groupApps.length > 1,
-  }));
+  return Array.from(map.entries())
+    .filter(([, groupApps]) => groupApps.length > 0)
+    .map(([type, groupApps]) => ({ type, apps: groupApps }));
 }
 
 function appRow(app: AppInfo) {
   return html`
     <tr class="hover:bg-gray-50 transition-colors">
       <td class="px-4 py-3">
-        <a href="/apps/${app.name}" class="text-blue-600 hover:text-blue-800 font-medium">${app.name}</a>
+        <div class="flex items-center gap-2">
+          <a href="/apps/${app.name}" class="text-blue-600 hover:text-blue-800 font-medium">${app.name}</a>
+          ${typeBadge(app.appType)}
+        </div>
         ${app.domains.length > 0
           ? html`<div class="flex flex-wrap gap-1 mt-0.5">${app.domains.map((d) => html`<a href="https://${d}" target="_blank" rel="noopener" class="text-[11px] text-gray-400 hover:text-blue-500 font-mono leading-none">${d}</a>`)}</div>`
           : html``}
@@ -63,12 +65,12 @@ function appRow(app: AppInfo) {
 }
 
 export function appsListRows(apps: AppInfo[]) {
-  const groups = groupAppsByPrefix(apps);
+  const groups = groupAppsByType(apps);
   return html`${groups.map(
     (group) => html`
-      ${group.showHeader
-        ? html`<tr class="bg-gray-50 border-t-2 border-gray-200"><td colspan="4" class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">${group.prefix}</td></tr>`
-        : html``}
+      <tr class="bg-gray-50 border-t-2 border-gray-200">
+        <td colspan="4" class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">${TYPE_LABELS[group.type] ?? group.type}</td>
+      </tr>
       ${group.apps.map(appRow)}
     `,
   )}`;
