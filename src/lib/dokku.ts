@@ -11,6 +11,12 @@ export interface AppInfo {
   processTypes: string[];
   processTypeCounts: Record<string, number>;
   domains: string[];
+  appType: "api" | "bot" | "indexer";
+}
+
+function inferAppType(name: string): "api" | "bot" | "indexer" {
+  if (/-hasura-|-indexer-/.test(name)) return "indexer";
+  return "api";
 }
 
 export interface GitReport {
@@ -148,7 +154,7 @@ export class DokkuClient {
         processCount++;
       }
 
-      apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [] });
+      apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [], appType: inferAppType(name) });
     }
 
     // Fetch all domains in a single SSH call to avoid channel exhaustion
