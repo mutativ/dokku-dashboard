@@ -14,10 +14,6 @@ export interface AppInfo {
   appType: "api" | "bot" | "indexer";
 }
 
-function inferAppType(name: string): "api" | "bot" | "indexer" {
-  if (/-hasura-|-indexer-/.test(name)) return "indexer";
-  return "api";
-}
 
 export interface GitReport {
   deployBranch: string;
@@ -154,7 +150,7 @@ export class DokkuClient {
         processCount++;
       }
 
-      apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [], appType: inferAppType(name) });
+      apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [], appType: "api" });
     }
 
     // Fetch all domains in a single SSH call to avoid channel exhaustion
@@ -165,6 +161,18 @@ export class DokkuClient {
       }
     } catch {
       // leave domains empty if batch call fails
+    }
+
+    // Fetch DOKKU_APP_TYPE for each app sequentially (avoids channel exhaustion)
+    for (const app of apps) {
+      try {
+        const val = (await this.exec(["config:get", app.name, "DOKKU_APP_TYPE"])).trim();
+        if (val === "api" || val === "bot" || val === "indexer") {
+          app.appType = val;
+        }
+      } catch {
+        // keep default "api"
+      }
     }
 
     return this.setCache("apps:list", apps);

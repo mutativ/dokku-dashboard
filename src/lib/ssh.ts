@@ -41,6 +41,7 @@ const ALLOWED_COMMANDS = new Set([
   "ps:rebuild",
   "ps:scale",
   "logs",
+  "config:get",
   "config:show",
   "config:set",
   "config:unset",

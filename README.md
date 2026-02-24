@@ -14,6 +14,25 @@ Web dashboard for managing a [Dokku](https://dokku.com) server. Built with Hono 
 - Postgres databases with optional SQL explorer
 - Google OAuth (restrict to your org) or password auth
 
+## App Types
+
+The dashboard groups apps into **APIs**, **Bots**, and **Indexers**. Set the `DOKKU_APP_TYPE` env var on each app so it appears in the right section:
+
+```bash
+dokku config:set --no-restart my-app DOKKU_APP_TYPE=api     # default
+dokku config:set --no-restart my-worker DOKKU_APP_TYPE=bot
+dokku config:set --no-restart my-indexer DOKKU_APP_TYPE=indexer
+```
+
+Apps without this var default to **api**. If you deploy via GitHub Actions, set it in your workflow:
+
+```yaml
+- name: Create app and configure
+  run: |
+    dokku apps:create my-app || true
+    dokku config:set --no-restart my-app DOKKU_APP_TYPE=bot
+```
+
 ## Quick Start
 
 ```bash
@@ -178,7 +197,7 @@ Install [dokku-acl](https://github.com/dokku-community/dokku-acl) to limit what 
 ```bash
 dokku plugin:install https://github.com/dokku-community/dokku-acl.git acl
 
-dokku config:set --global DOKKU_ACL_USER_COMMANDS="apps:list,apps:create,apps:destroy,ps:report,ps:start,ps:stop,ps:restart,ps:rebuild,ps:scale,logs,config:show,config:set,config:unset,domains:report,domains:add,domains:remove,letsencrypt:enable,letsencrypt:disable,postgres:list,postgres:create,postgres:destroy,postgres:info,postgres:link,postgres:unlink,postgres:links,postgres:connect,resource:report,resource:limit"
+dokku config:set --global DOKKU_ACL_USER_COMMANDS="apps:list,apps:create,apps:destroy,ps:report,ps:start,ps:stop,ps:restart,ps:rebuild,ps:scale,logs,config:get,config:show,config:set,config:unset,domains:report,domains:add,domains:remove,letsencrypt:enable,letsencrypt:disable,postgres:list,postgres:create,postgres:destroy,postgres:info,postgres:link,postgres:unlink,postgres:links,postgres:connect,resource:report,resource:limit"
 ```
 
 This blocks dangerous commands (`docker-options:add`, `storage:mount`, `ssh-keys:add`, `plugin:install`, `network:*`) at the Dokku layer — even if the dashboard is compromised.
