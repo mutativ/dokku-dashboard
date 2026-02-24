@@ -11,6 +11,7 @@ const MOCK_APPS: AppInfo[] = [
     processTypes: ["web"],
     processTypeCounts: { web: 2 },
     domains: ["api.example.com"],
+    appType: "api",
   },
   {
     name: "api-worker",
@@ -41,6 +42,7 @@ const MOCK_APPS: AppInfo[] = [
     processTypes: ["web"],
     processTypeCounts: { web: 1 },
     domains: ["example.com", "www.example.com"],
+    appType: "api",
   },
   // staging group
   {
@@ -51,6 +53,7 @@ const MOCK_APPS: AppInfo[] = [
     processTypes: ["web"],
     processTypeCounts: { web: 1 },
     domains: ["staging.example.com"],
+    appType: "api",
   },
   {
     name: "staging-worker",
