@@ -1,12 +1,14 @@
 # ── Stage 1: Install dependencies ─────────────────────────────────────────
-FROM oven/bun:1.2-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+RUN corepack enable && corepack prepare pnpm@latest --activate
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 # ── Stage 2: Build TypeScript + Tailwind CSS ──────────────────────────────
-FROM oven/bun:1.2-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
@@ -18,7 +20,7 @@ COPY public ./public
 COPY tsconfig.json ./
 COPY tailwind.config.js ./
 
-RUN bun run build
+RUN pnpm run build
 
 # ── Stage 3: Production runner ───────────────────────────────────────────
 FROM node:22-alpine AS runner
