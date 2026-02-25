@@ -30,6 +30,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Sync from upstream (mutativ/dokku-dashboard)
+        run: |
+          git config user.email "ci@stakedao.org"
+          git config user.name "CI"
+          git remote add upstream https://github.com/mutativ/dokku-dashboard.git
+          git fetch upstream main
+          git merge upstream/main --no-edit --strategy-option=theirs
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
