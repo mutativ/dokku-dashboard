@@ -103,17 +103,23 @@ export class SshPool {
       });
 
       conn.on("error", (err) => {
-        this.ready = false;
-        this.conn = null;
-        this.connecting = false;
+        // Only reset state if this is still the active connection, to avoid
+        // a stale connection's error handler corrupting a newly established one.
+        if (this.conn === conn || this.connecting) {
+          this.ready = false;
+          this.conn = null;
+          this.connecting = false;
+        }
         const pending = this.waiters.splice(0);
         for (const w of pending) w.reject(err);
       });
 
       conn.on("close", () => {
-        this.ready = false;
-        this.conn = null;
-        this.connecting = false;
+        if (this.conn === conn) {
+          this.ready = false;
+          this.conn = null;
+          this.connecting = false;
+        }
       });
 
       conn.connect({
@@ -161,9 +167,11 @@ export class SshPool {
           if (!settled) {
             settled = true;
             // Connection may be stale — force reconnect next time
-            this.ready = false;
-            this.conn?.end();
-            this.conn = null;
+            if (this.conn === conn) {
+              this.ready = false;
+              this.conn.end();
+              this.conn = null;
+            }
             auditLog(args, "error", performance.now() - start, err.message);
             reject(err);
           }
@@ -228,9 +236,11 @@ export class SshPool {
           clearTimeout(timer);
           if (!settled) {
             settled = true;
-            this.ready = false;
-            this.conn?.end();
-            this.conn = null;
+            if (this.conn === conn) {
+              this.ready = false;
+              this.conn.end();
+              this.conn = null;
+            }
             auditLog(args, "error", performance.now() - start, err.message);
             reject(err);
           }
