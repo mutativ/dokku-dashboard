@@ -16,6 +16,26 @@ interface SchemaColumn {
 
 export function dbExplorerPage(dbName: string, tables: TableInfo[]) {
   return html`
+    ${raw(`<script>
+      function fillQuery(tableName) {
+        var ta = document.querySelector('textarea[name="sql"]');
+        ta.value = 'SELECT * FROM "' + tableName + '" LIMIT 50';
+        ta.focus();
+        document.getElementById('query-runner').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      document.addEventListener('DOMContentLoaded', function() {
+        var ta = document.querySelector('textarea[name="sql"]');
+        if (ta) {
+          ta.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              this.closest('form').requestSubmit();
+            }
+          });
+        }
+      });
+    </script>`)}
+
     ${pageHeader(
       `${dbName}`,
       html`
@@ -29,17 +49,17 @@ export function dbExplorerPage(dbName: string, tables: TableInfo[]) {
 
     <div class="grid gap-6">
       <!-- Query Runner -->
-      <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div id="query-runner" class="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
           <h3 class="text-sm font-semibold text-gray-700">SQL Query</h3>
         </div>
         <div class="p-4">
           <form hx-post="/databases/${dbName}/explore/query" hx-target="#query-result" hx-swap="innerHTML">
-            <textarea name="sql" rows="3" placeholder="SELECT * FROM recipes LIMIT 10;"
+            <textarea name="sql" rows="3" placeholder="SELECT * FROM table LIMIT 50"
               class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
             ></textarea>
             <div class="flex items-center justify-between mt-2">
-              <span class="text-xs text-gray-400">Read-only. Only SELECT queries allowed.</span>
+              <span class="text-xs text-gray-400">Read-only. Only SELECT queries allowed. Ctrl+Enter to run.</span>
               <button type="submit"
                 class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-lg text-sm font-medium text-white transition-colors">
                 Run Query
@@ -49,6 +69,9 @@ export function dbExplorerPage(dbName: string, tables: TableInfo[]) {
           <div id="query-result" class="mt-4"></div>
         </div>
       </div>
+
+      <!-- Inline Schema Panel (populated by clicking a table) -->
+      <div id="schema-panel"></div>
 
       <!-- Tables -->
       <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -71,7 +94,19 @@ export function dbExplorerPage(dbName: string, tables: TableInfo[]) {
                     (t) => html`
                       <tr class="hover:bg-gray-50 transition-colors">
                         <td class="px-4 py-2.5">
-                          <a href="/databases/${dbName}/explore/table/${t.name}" class="text-blue-600 hover:text-blue-800">${t.name}</a>
+                          <div class="flex items-center gap-2">
+                            <button type="button"
+                              data-table="${t.name}"
+                              onclick="fillQuery(this.dataset.table)"
+                              hx-get="/databases/${dbName}/explore/table/${t.name}/schema"
+                              hx-target="#schema-panel"
+                              hx-swap="innerHTML"
+                              class="text-blue-600 hover:text-blue-800 font-medium text-left">
+                              ${t.name}
+                            </button>
+                            <a href="/databases/${dbName}/explore/table/${t.name}"
+                              class="text-gray-400 hover:text-gray-600 text-xs" title="Full details">↗</a>
+                          </div>
                         </td>
                         <td class="px-4 py-2.5 text-gray-500">${t.type}</td>
                         <td class="px-4 py-2.5 text-gray-500 font-mono">${formatNumber(t.rowEstimate)}</td>
@@ -82,6 +117,40 @@ export function dbExplorerPage(dbName: string, tables: TableInfo[]) {
               </table>
             `}
       </div>
+    </div>
+  `;
+}
+
+export function dbSchemaPartial(tableName: string, schema: SchemaColumn[]) {
+  return html`
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-700">${tableName} — ${schema.length} columns</h3>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="text-left text-xs text-gray-500 uppercase bg-gray-50">
+          <tr>
+            <th class="px-4 py-2.5">Column</th>
+            <th class="px-4 py-2.5">Type</th>
+            <th class="px-4 py-2.5">Nullable</th>
+            <th class="px-4 py-2.5">Default</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          ${schema.map(
+            (col) => html`
+              <tr class="hover:bg-gray-50 transition-colors">
+                <td class="px-4 py-2.5 font-mono text-blue-600">${col.column}</td>
+                <td class="px-4 py-2.5 text-gray-500 font-mono text-xs">${col.type}</td>
+                <td class="px-4 py-2.5">${col.nullable === "YES"
+                  ? raw('<span class="text-amber-600">yes</span>')
+                  : raw('<span class="text-green-600">no</span>')}</td>
+                <td class="px-4 py-2.5 text-gray-400 font-mono text-xs">${col.defaultVal}</td>
+              </tr>
+            `,
+          )}
+        </tbody>
+      </table>
     </div>
   `;
 }

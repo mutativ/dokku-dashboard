@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppBindings } from "../server.js";
 import { layout } from "../views/layout.js";
-import { dbExplorerPage, dbTableDetailPage, dbQueryResultPartial } from "../views/pages/db-explorer.js";
+import { dbExplorerPage, dbTableDetailPage, dbQueryResultPartial, dbSchemaPartial } from "../views/pages/db-explorer.js";
 import { alert } from "../views/components/alert.js";
 import { sqlQuerySchema, validationError } from "../lib/validation.js";
 
@@ -44,6 +44,22 @@ export function dbExplorerRoutes() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to get table info";
       return c.html(layout(`${tableName} - ${dbName}`, alert("error", message), "/databases", c.get("userEmail")));
+    }
+  });
+
+  // ── Schema partial (HTMX) ─────────────────────────────────────────────
+
+  app.get("/table/:table/schema", async (c) => {
+    const dokku = c.get("dokku");
+    const dbName = c.req.param("name")!;
+    const tableName = c.req.param("table")!;
+
+    try {
+      const schema = await dokku.postgresTableSchema(dbName, tableName);
+      return c.html(dbSchemaPartial(tableName, schema));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to get schema";
+      return c.html(alert("error", message));
     }
   });
 
