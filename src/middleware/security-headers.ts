@@ -14,6 +14,12 @@ export function securityHeadersMiddleware() {
     h.set("Referrer-Policy", "strict-origin-when-cross-origin");
     h.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 
+    // Prevent proxies/CDNs from caching user-specific HTML pages
+    const ct = c.res.headers.get("content-type") ?? "";
+    if (ct.includes("text/html")) {
+      h.set("Cache-Control", "no-store, private");
+    }
+
     // CSP: allow self + inline scripts (HTMX, Tailwind) + CDN for styles/fonts
     h.set(
       "Content-Security-Policy",
