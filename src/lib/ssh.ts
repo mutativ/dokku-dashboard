@@ -277,6 +277,89 @@ export class SshPool {
     });
   }
 
+  /**
+   * Execute a command with stdin on a fresh, dedicated connection.
+   * Used for interactive commands like postgres:connect that cause Dokku's
+   * sshcommand handler to close the underlying TCP connection after execution,
+   * which would poison the shared persistent pool.
+   */
+  execOneshotWithStdin(args: string[], stdin: string): Promise<string> {
+    assertAllowedCommand(args);
+    const cmd = args.map(shellEscape).join(" ");
+    const start = performance.now();
+
+    return new Promise((resolve, reject) => {
+      const conn = new Client();
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          conn.end();
+          const err = new Error(`SSH command timed out after ${this.cfg.timeoutMs}ms: ${cmd}`);
+          auditLog(args, "error", performance.now() - start, err.message);
+          reject(err);
+        }
+      }, this.cfg.timeoutMs);
+
+      conn.on("ready", () => {
+        conn.exec(cmd, (err, stream) => {
+          if (err) {
+            clearTimeout(timer);
+            if (!settled) {
+              settled = true;
+              conn.end();
+              auditLog(args, "error", performance.now() - start, err.message);
+              reject(err);
+            }
+            return;
+          }
+
+          stream.on("data", (data: Buffer) => { stdout += data.toString(); });
+          stream.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+
+          stream.on("close", (code: number) => {
+            clearTimeout(timer);
+            conn.end();
+            if (!settled) {
+              settled = true;
+              if (code === 0) {
+                auditLog(args, "ok", performance.now() - start);
+                resolve(stdout);
+              } else {
+                const errMsg = `SQL error: ${stderr || stdout}`;
+                auditLog(args, "error", performance.now() - start, errMsg);
+                reject(new Error(errMsg));
+              }
+            }
+          });
+
+          stream.write(stdin);
+          stream.end();
+        });
+      });
+
+      conn.on("error", (err) => {
+        clearTimeout(timer);
+        if (!settled) {
+          settled = true;
+          auditLog(args, "error", performance.now() - start, err.message);
+          reject(err);
+        }
+      });
+
+      conn.connect({
+        host: this.cfg.host,
+        port: this.cfg.port,
+        username: this.cfg.username,
+        privateKey: this.cfg.privateKey,
+        keepaliveInterval: 0,
+      });
+    });
+  }
+
   /** Stream a command. Uses a separate connection since streams are long-lived. */
   stream(
     args: string[],

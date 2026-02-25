@@ -507,7 +507,7 @@ export class DokkuClient {
 
     // Wrap with statement timeout (5s) and CSV output
     const wrappedSql = `SET statement_timeout = '5s';\n\\pset format csv\n${limitedSql};`;
-    const out = await this.pool.execWithStdin(
+    const out = await this.pool.execOneshotWithStdin(
       ["postgres:connect", dbName],
       wrappedSql,
     );
