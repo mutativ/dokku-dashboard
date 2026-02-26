@@ -12,6 +12,10 @@ function isHtmx(c: { req: { header: (name: string) => string | undefined } }) {
   return c.req.header("HX-Request") === "true";
 }
 
+function mutationsEnabled(c: { get: (key: "env") => { ENABLE_DESTRUCTIVE_ACTIONS: boolean } }) {
+  return c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
+}
+
 export function appsRoutes() {
   const app = new Hono<AppBindings>();
 
@@ -22,8 +26,9 @@ export function appsRoutes() {
     const partial = c.req.query("partial");
     try {
       const apps = await dokku.appsList();
-      if (partial === "rows") return c.html(appsListRows(apps));
-      return c.html(layout("Apps", appsListPage(apps), "/apps", c.get("userEmail")));
+      const canMutate = mutationsEnabled(c);
+      if (partial === "rows") return c.html(appsListRows(apps, canMutate));
+      return c.html(layout("Apps", appsListPage(apps, canMutate), "/apps", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to list apps";
       return c.html(layout("Apps", alert("error", message), "/apps", c.get("userEmail")));
@@ -33,6 +38,9 @@ export function appsRoutes() {
   // ── Create app ─────────────────────────────────────────────────────────
 
   app.post("/create", async (c) => {
+    if (!mutationsEnabled(c)) {
+      return c.redirect("/apps");
+    }
     const dokku = c.get("dokku");
     const body = await c.req.parseBody();
     const parsed = nameSchema.safeParse(body.name);
@@ -61,10 +69,11 @@ export function appsRoutes() {
       const apps = await dokku.appsList();
       const appInfo = apps.find((a) => a.name === name);
       const content = appInfoPartial(name, meta);
+      const canMutate = mutationsEnabled(c);
 
       if (partial === "1") return c.html(content);
       return c.html(
-        layout(name, appDetailPage(name, "info", content, appInfo), "/apps", c.get("userEmail")),
+        layout(name, appDetailPage(name, "info", content, appInfo, canMutate), "/apps", c.get("userEmail")),
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to get app info";
@@ -79,6 +88,9 @@ export function appsRoutes() {
   }
 
   app.post("/:name/restart", async (c) => {
+    if (!mutationsEnabled(c)) {
+      return isHtmx(c) ? c.html(toastOob("error", "View-only mode: action disabled")) : c.redirect("/apps");
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     // Self-restart: fire-and-forget, respond before we die
@@ -102,6 +114,9 @@ export function appsRoutes() {
   });
 
   app.post("/:name/stop", async (c) => {
+    if (!mutationsEnabled(c)) {
+      return isHtmx(c) ? c.html(toastOob("error", "View-only mode: action disabled")) : c.redirect("/apps");
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     if (isSelf(c, name) && isHtmx(c)) {
@@ -122,6 +137,9 @@ export function appsRoutes() {
   });
 
   app.post("/:name/start", async (c) => {
+    if (!mutationsEnabled(c)) {
+      return isHtmx(c) ? c.html(toastOob("error", "View-only mode: action disabled")) : c.redirect("/apps");
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     try {
@@ -139,6 +157,9 @@ export function appsRoutes() {
   });
 
   app.post("/:name/rebuild", async (c) => {
+    if (!mutationsEnabled(c)) {
+      return isHtmx(c) ? c.html(toastOob("error", "View-only mode: action disabled")) : c.redirect("/apps");
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     if (isSelf(c, name) && isHtmx(c)) {
@@ -163,6 +184,9 @@ export function appsRoutes() {
   // ── Destroy app ────────────────────────────────────────────────────────
 
   app.post("/:name/destroy", async (c) => {
+    if (!mutationsEnabled(c)) {
+      return c.redirect("/apps");
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     try {
@@ -185,8 +209,9 @@ export function appsRoutes() {
 
     const apps = await dokku.appsList();
     const appInfo = apps.find((a) => a.name === name);
+    const canMutate = mutationsEnabled(c);
     return c.html(
-      layout(name, appDetailPage(name, "logs", content, appInfo), "/apps", c.get("userEmail")),
+      layout(name, appDetailPage(name, "logs", content, appInfo, canMutate), "/apps", c.get("userEmail")),
     );
   });
 

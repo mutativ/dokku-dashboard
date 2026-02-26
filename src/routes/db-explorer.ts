@@ -66,6 +66,9 @@ export function dbExplorerRoutes() {
   // ── Run query (HTMX partial) ───────────────────────────────────────────
 
   app.post("/query", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.html(alert("error", "View-only mode: query execution is disabled"));
+    }
     const dokku = c.get("dokku");
     const dbName = c.req.param("name")!;
     const body = await c.req.parseBody();

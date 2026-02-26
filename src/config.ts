@@ -47,6 +47,12 @@ const envSchema = z
       .enum(["true", "false", "1", "0"])
       .default("false")
       .transform((v) => v === "true" || v === "1"),
+
+    // Mutations — when disabled, dashboard is read-only
+    ENABLE_DESTRUCTIVE_ACTIONS: z
+      .enum(["true", "false", "1", "0"])
+      .default("true")
+      .transform((v) => v === "true" || v === "1"),
   })
   .refine(
     (env) => {

@@ -11,7 +11,7 @@ export interface AppInfo {
   processTypes: string[];
   processTypeCounts: Record<string, number>;
   domains: string[];
-  appType: "api" | "bot" | "indexer";
+  appType: string;
 }
 
 
@@ -150,7 +150,7 @@ export class DokkuClient {
         processCount++;
       }
 
-      apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [], appType: "api" });
+      apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [], appType: "" });
     }
 
     // Fetch all domains in a single SSH call to avoid channel exhaustion
@@ -167,11 +167,11 @@ export class DokkuClient {
     for (const app of apps) {
       try {
         const val = (await this.exec(["config:get", app.name, "DOKKU_APP_TYPE"])).trim();
-        if (val === "api" || val === "bot" || val === "indexer") {
+        if (val) {
           app.appType = val;
         }
       } catch {
-        // keep default "api"
+        // keep empty app type
       }
     }
 

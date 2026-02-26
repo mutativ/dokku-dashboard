@@ -24,7 +24,7 @@ export function databasesRoutes() {
         })),
       );
 
-      return c.html(layout("Databases", databasesListPage(databases, apps), "/databases", c.get("userEmail")));
+      return c.html(layout("Databases", databasesListPage(databases, apps, c.get("env").ENABLE_DESTRUCTIVE_ACTIONS), "/databases", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to list databases";
       return c.html(layout("Databases", alert("error", message), "/databases", c.get("userEmail")));
@@ -34,6 +34,9 @@ export function databasesRoutes() {
   // ── Create database ────────────────────────────────────────────────────
 
   app.post("/create", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect("/databases");
+    }
     const dokku = c.get("dokku");
     const body = await c.req.parseBody();
     const parsed = nameSchema.safeParse(body.name);
@@ -64,7 +67,7 @@ export function databasesRoutes() {
         dokku.appsListNames(),
       ]);
 
-      return c.html(layout(name, databaseDetailPage(name, info, links, apps, env.ENABLE_SQL_EXPLORER), "/databases", c.get("userEmail")));
+      return c.html(layout(name, databaseDetailPage(name, info, links, apps, env.ENABLE_SQL_EXPLORER, env.ENABLE_DESTRUCTIVE_ACTIONS), "/databases", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to get database info";
       return c.html(layout(name, alert("error", message), "/databases", c.get("userEmail")));
@@ -74,6 +77,9 @@ export function databasesRoutes() {
   // ── Destroy database ───────────────────────────────────────────────────
 
   app.post("/:name/destroy", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect("/databases");
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     try {
@@ -87,6 +93,9 @@ export function databasesRoutes() {
   // ── Link ───────────────────────────────────────────────────────────────
 
   app.post("/:name/link", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect(`/databases/${c.req.param("name")}`);
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     const body = await c.req.parseBody();
@@ -105,6 +114,9 @@ export function databasesRoutes() {
   // ── Unlink ─────────────────────────────────────────────────────────────
 
   app.post("/:name/unlink", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect(`/databases/${c.req.param("name")}`);
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name");
     const body = await c.req.parseBody();

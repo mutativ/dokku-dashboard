@@ -12,38 +12,47 @@ function isSensitive(key: string): boolean {
   return SENSITIVE_PATTERNS.test(key);
 }
 
-function envPartial(appName: string, vars: Record<string, string>, message?: { type: "success" | "error"; text: string }) {
+function envPartial(
+  appName: string,
+  vars: Record<string, string>,
+  enableDestructiveActions: boolean,
+  message?: { type: "success" | "error"; text: string },
+) {
   const entries = Object.entries(vars).sort(([a], [b]) => a.localeCompare(b));
 
   return html`
     ${message ? alert(message.type, message.text) : html``}
 
-    <!-- Set env var form -->
-    <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Set Environment Variable</h3>
-      <form method="POST" action="/apps/${appName}/env/set" class="flex gap-3 items-end">
-        <div class="flex-1">
-          <label class="block mb-1 text-xs text-gray-400">Key</label>
-          <input type="text" name="key" required pattern="[A-Z_][A-Z0-9_]*"
-            class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="MY_VAR">
-        </div>
-        <div class="flex-1">
-          <label class="block mb-1 text-xs text-gray-400">Value</label>
-          <input type="text" name="value" required
-            class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="value">
-        </div>
-        <div class="flex gap-2">
-          <label class="flex items-center gap-2 text-xs text-gray-500">
-            <input type="checkbox" name="no_restart" class="rounded border-gray-300">
-            No restart
-          </label>
-          <button type="submit"
-            class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors whitespace-nowrap">Set</button>
-        </div>
-      </form>
-    </div>
+    ${enableDestructiveActions
+      ? html`
+          <!-- Set env var form -->
+          <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Set Environment Variable</h3>
+            <form method="POST" action="/apps/${appName}/env/set" class="flex gap-3 items-end">
+              <div class="flex-1">
+                <label class="block mb-1 text-xs text-gray-400">Key</label>
+                <input type="text" name="key" required pattern="[A-Z_][A-Z0-9_]*"
+                  class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="MY_VAR">
+              </div>
+              <div class="flex-1">
+                <label class="block mb-1 text-xs text-gray-400">Value</label>
+                <input type="text" name="value" required
+                  class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="value">
+              </div>
+              <div class="flex gap-2">
+                <label class="flex items-center gap-2 text-xs text-gray-500">
+                  <input type="checkbox" name="no_restart" class="rounded border-gray-300">
+                  No restart
+                </label>
+                <button type="submit"
+                  class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors whitespace-nowrap">Set</button>
+              </div>
+            </form>
+          </div>
+        `
+      : html`<div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6 text-xs text-gray-500">View-only mode: environment updates are disabled.</div>`}
 
     <!-- Current env vars -->
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -71,10 +80,12 @@ function envPartial(appName: string, vars: Record<string, string>, message?: { t
                                    class="ml-2 text-xs text-gray-400 hover:text-gray-600 transition-colors">show</button>`
                           : html``}
                       </div>
-                      <form method="POST" action="/apps/${appName}/env/unset" class="shrink-0 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <input type="hidden" name="key" value="${key}">
-                        <button class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded transition-colors">Unset</button>
-                      </form>
+                      ${enableDestructiveActions
+                        ? html`<form method="POST" action="/apps/${appName}/env/unset" class="shrink-0 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <input type="hidden" name="key" value="${key}">
+                            <button class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded transition-colors">Unset</button>
+                          </form>`
+                        : html``}
                     </div>
                   `;
                 },
@@ -96,23 +107,27 @@ export function envRoutes() {
     const partial = c.req.query("partial");
 
     try {
+      const canMutate = c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
       const [vars, apps] = await Promise.all([dokku.configShow(name), dokku.appsList()]);
       const appInfo = apps.find((a) => a.name === name);
-      const content = envPartial(name, vars);
+      const content = envPartial(name, vars, canMutate);
 
       if (partial === "1") return c.html(content);
-      return c.html(layout(name, appDetailPage(name, "env", content, appInfo), "/apps", c.get("userEmail")));
+      return c.html(layout(name, appDetailPage(name, "env", content, appInfo, canMutate), "/apps", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to get env vars";
       const content = alert("error", message);
       if (partial === "1") return c.html(content);
-      return c.html(layout(name, appDetailPage(name, "env", content), "/apps", c.get("userEmail")));
+      return c.html(layout(name, appDetailPage(name, "env", content, undefined, c.get("env").ENABLE_DESTRUCTIVE_ACTIONS), "/apps", c.get("userEmail")));
     }
   });
 
   // ── Set env var ────────────────────────────────────────────────────────
 
   app.post("/set", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect(`/apps/${c.req.param("name")!}/env`);
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name")!;
     const body = await c.req.parseBody();
@@ -136,6 +151,9 @@ export function envRoutes() {
   // ── Unset env var ──────────────────────────────────────────────────────
 
   app.post("/unset", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect(`/apps/${c.req.param("name")!}/env`);
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name")!;
     const body = await c.req.parseBody();

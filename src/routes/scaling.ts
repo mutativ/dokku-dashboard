@@ -6,7 +6,12 @@ import { appDetailPage } from "../views/pages/app-detail.js";
 import { alert } from "../views/components/alert.js";
 import { processTypeSchema, scaleCountSchema, resourceValueSchema } from "../lib/validation.js";
 
-function scalingPartial(appName: string, scaleOutput: string, resourceOutput: string) {
+function scalingPartial(
+  appName: string,
+  scaleOutput: string,
+  resourceOutput: string,
+  enableDestructiveActions: boolean,
+) {
   // Parse ps:scale output
   const scaleLines = scaleOutput.trim().split("\n");
   const processes: Array<{ type: string; count: string }> = [];
@@ -30,57 +35,65 @@ function scalingPartial(appName: string, scaleOutput: string, resourceOutput: st
   }
 
   return html`
-    <!-- Scale processes -->
-    <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Scale Processes</h3>
-      <form method="POST" action="/apps/${appName}/scaling/scale" class="space-y-3">
-        ${processes.length > 0
-          ? processes.map(
-              (p) => html`
-                <div class="flex gap-3 items-center">
-                  <label class="w-24 text-sm text-gray-500">${p.type}</label>
-                  <input type="number" name="${p.type}" value="${p.count}" min="0" max="20"
-                    class="w-24 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-              `,
-            )
-          : html`<p class="text-sm text-gray-400">No processes configured. Deploy the app first.</p>`}
-        ${processes.length > 0
-          ? html`
-              <button type="submit"
-                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors mt-2">
-                Apply Scale
-              </button>
-            `
-          : html``}
-      </form>
-    </div>
+    ${enableDestructiveActions
+      ? html`
+          <!-- Scale processes -->
+          <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Scale Processes</h3>
+            <form method="POST" action="/apps/${appName}/scaling/scale" class="space-y-3">
+              ${processes.length > 0
+                ? processes.map(
+                    (p) => html`
+                      <div class="flex gap-3 items-center">
+                        <label class="w-24 text-sm text-gray-500">${p.type}</label>
+                        <input type="number" name="${p.type}" value="${p.count}" min="0" max="20"
+                          class="w-24 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      </div>
+                    `,
+                  )
+                : html`<p class="text-sm text-gray-400">No processes configured. Deploy the app first.</p>`}
+              ${processes.length > 0
+                ? html`
+                    <button type="submit"
+                      class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors mt-2">
+                      Apply Scale
+                    </button>
+                  `
+                : html``}
+            </form>
+          </div>
+        `
+      : html`<div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6 text-xs text-gray-500">View-only mode: scaling updates are disabled.</div>`}
 
     <!-- Set resource limits -->
-    <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-      <h3 class="text-sm font-semibold text-gray-700 mb-3">Set Resource Limits</h3>
-      <form method="POST" action="/apps/${appName}/scaling/resources" class="flex gap-3 items-end flex-wrap">
-        <div>
-          <label class="block mb-1 text-xs text-gray-400">Process Type</label>
-          <input type="text" name="process_type" value="web"
-            class="w-32 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block mb-1 text-xs text-gray-400">Memory (e.g. 512m)</label>
-          <input type="text" name="memory" placeholder="512m"
-            class="w-32 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-          <label class="block mb-1 text-xs text-gray-400">CPU (e.g. 1)</label>
-          <input type="text" name="cpu" placeholder="1"
-            class="w-32 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <button type="submit"
-          class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">
-          Set Limits
-        </button>
-      </form>
-    </div>
+    ${enableDestructiveActions
+      ? html`
+          <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">Set Resource Limits</h3>
+            <form method="POST" action="/apps/${appName}/scaling/resources" class="flex gap-3 items-end flex-wrap">
+              <div>
+                <label class="block mb-1 text-xs text-gray-400">Process Type</label>
+                <input type="text" name="process_type" value="web"
+                  class="w-32 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block mb-1 text-xs text-gray-400">Memory (e.g. 512m)</label>
+                <input type="text" name="memory" placeholder="512m"
+                  class="w-32 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+              <div>
+                <label class="block mb-1 text-xs text-gray-400">CPU (e.g. 1)</label>
+                <input type="text" name="cpu" placeholder="1"
+                  class="w-32 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              </div>
+              <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">
+                Set Limits
+              </button>
+            </form>
+          </div>
+        `
+      : html``}
 
     <!-- Current resource report -->
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -122,21 +135,25 @@ export function scalingRoutes() {
         dokku.appsList(),
       ]);
       const appInfo = apps.find((a) => a.name === name);
+      const canMutate = c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
 
-      const content = scalingPartial(name, scaleOutput, resourceOutput);
+      const content = scalingPartial(name, scaleOutput, resourceOutput, canMutate);
       if (partial === "1") return c.html(content);
-      return c.html(layout(name, appDetailPage(name, "scaling", content, appInfo), "/apps", c.get("userEmail")));
+      return c.html(layout(name, appDetailPage(name, "scaling", content, appInfo, canMutate), "/apps", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to get scaling info";
       const content = alert("error", message);
       if (partial === "1") return c.html(content);
-      return c.html(layout(name, appDetailPage(name, "scaling", content), "/apps", c.get("userEmail")));
+      return c.html(layout(name, appDetailPage(name, "scaling", content, undefined, c.get("env").ENABLE_DESTRUCTIVE_ACTIONS), "/apps", c.get("userEmail")));
     }
   });
 
   // ── Apply scale ────────────────────────────────────────────────────────
 
   app.post("/scale", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect(`/apps/${c.req.param("name")!}/scaling`);
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name")!;
     const body = await c.req.parseBody();
@@ -164,6 +181,9 @@ export function scalingRoutes() {
   // ── Set resource limits ────────────────────────────────────────────────
 
   app.post("/resources", async (c) => {
+    if (!c.get("env").ENABLE_DESTRUCTIVE_ACTIONS) {
+      return c.redirect(`/apps/${c.req.param("name")!}/scaling`);
+    }
     const dokku = c.get("dokku");
     const name = c.req.param("name")!;
     const body = await c.req.parseBody();

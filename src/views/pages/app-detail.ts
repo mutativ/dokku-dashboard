@@ -5,7 +5,10 @@ import { tabs } from "../components/nav.js";
 import { statusBadge } from "../components/badge.js";
 import { actionBtn } from "../components/action-btn.js";
 
-function headerActions(appName: string, appInfo?: AppInfo) {
+function headerActions(appName: string, appInfo?: AppInfo, enableDestructiveActions = true) {
+  if (!enableDestructiveActions) {
+    return html`<span class="text-xs font-medium bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">View only mode</span>`;
+  }
   const status = appInfo?.status ?? "unknown";
 
   return html`
@@ -33,6 +36,7 @@ export function appDetailPage(
   activeTab: string,
   tabContent: HtmlEscapedString | Promise<HtmlEscapedString>,
   appInfo?: AppInfo,
+  enableDestructiveActions = true,
 ) {
   return html`
     <div class="flex items-center justify-between mb-6">
@@ -40,7 +44,7 @@ export function appDetailPage(
         <h2 class="text-2xl font-bold text-gray-900">${appName}</h2>
         ${appInfo ? statusBadge(appInfo.status) : html``}
       </div>
-      ${headerActions(appName, appInfo)}
+      ${headerActions(appName, appInfo, enableDestructiveActions)}
     </div>
 
     ${tabs(appName, activeTab)}
@@ -49,26 +53,30 @@ export function appDetailPage(
       ${tabContent}
     </div>
 
-    <!-- Destroy confirmation -->
-    <div id="destroy-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div class="bg-white border border-gray-200 rounded-xl w-full max-w-md p-6 shadow-xl">
-        <h3 class="text-lg font-bold text-red-600 mb-2">Destroy App</h3>
-        <p class="text-sm text-gray-600 mb-4">
-          This will permanently destroy <strong class="text-gray-900">${appName}</strong> and all its data.
-          This action cannot be undone.
-        </p>
-        <div class="flex gap-3 justify-end">
-          <button type="button" onclick="document.getElementById('destroy-modal').classList.add('hidden')"
-            class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
-          <form method="POST" action="/apps/${appName}/destroy">
-            <button type="submit"
-              class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-              Destroy
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
+    ${enableDestructiveActions
+      ? html`
+          <!-- Destroy confirmation -->
+          <div id="destroy-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div class="bg-white border border-gray-200 rounded-xl w-full max-w-md p-6 shadow-xl">
+              <h3 class="text-lg font-bold text-red-600 mb-2">Destroy App</h3>
+              <p class="text-sm text-gray-600 mb-4">
+                This will permanently destroy <strong class="text-gray-900">${appName}</strong> and all its data.
+                This action cannot be undone.
+              </p>
+              <div class="flex gap-3 justify-end">
+                <button type="button" onclick="document.getElementById('destroy-modal').classList.add('hidden')"
+                  class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
+                <form method="POST" action="/apps/${appName}/destroy">
+                  <button type="submit"
+                    class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    Destroy
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        `
+      : html``}
   `;
 }
 

@@ -16,15 +16,15 @@ Web dashboard for managing a [Dokku](https://dokku.com) server. Built with Hono 
 
 ## App Types
 
-The dashboard groups apps into **APIs**, **Bots**, and **Indexers**. Set the `DOKKU_APP_TYPE` env var on each app so it appears in the right section:
+The dashboard groups apps by `DOKKU_APP_TYPE`. You can use any value:
 
 ```bash
-dokku config:set --no-restart my-app DOKKU_APP_TYPE=api     # default
-dokku config:set --no-restart my-worker DOKKU_APP_TYPE=bot
+dokku config:set --no-restart my-app DOKKU_APP_TYPE=api
+dokku config:set --no-restart my-worker DOKKU_APP_TYPE=worker
 dokku config:set --no-restart my-indexer DOKKU_APP_TYPE=indexer
 ```
 
-Apps without this var default to **api**. If you deploy via GitHub Actions, set it in your workflow:
+Apps without this var are shown in the `untyped` group. If you deploy via GitHub Actions, set it in your workflow:
 
 ```yaml
 - name: Create app and configure
@@ -247,6 +247,7 @@ pnpm dev        # starts with hot reload on :4200
 | `DOKKU_SSH_KEY` | Yes | | Base64-encoded SSH private key |
 | `PORT` | No | `4200` | Dashboard port |
 | `ENABLE_SQL_EXPLORER` | No | `false` | Enable the SQL query runner |
+| `ENABLE_DESTRUCTIVE_ACTIONS` | No | `true` | Enable create/update/delete actions (`false` = view-only mode) |
 | `TRUSTED_PROXIES` | No | | Comma-separated IPs for X-Forwarded-For |
 
 ## Stack
