@@ -3,21 +3,27 @@ import { pageHeader } from "../components/nav.js";
 import { table } from "../components/table.js";
 
 export function databasesListPage(
-  databases: Array<{ name: string; links: string[] }>,
+  databases: Array<{ name: string; links: string[]; size: string }>,
   apps: string[],
   enableDestructiveActions = true,
+  totalSize?: string,
 ) {
   const header = pageHeader(
     "Databases",
-    enableDestructiveActions
-      ? html`
-          <button
-            onclick="document.getElementById('create-db-modal').classList.remove('hidden')"
-            class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">
-            Create Database
-          </button>
-        `
-      : html`<span class="text-xs font-medium bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">View only mode</span>`,
+    html`
+      <div class="flex items-center gap-3">
+        ${totalSize ? html`<span class="text-xs font-medium bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full">Total: ${totalSize}</span>` : html``}
+        ${enableDestructiveActions
+          ? html`
+              <button
+                onclick="document.getElementById('create-db-modal').classList.remove('hidden')"
+                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">
+                Create Database
+              </button>
+            `
+          : html`<span class="text-xs font-medium bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">View only mode</span>`}
+      </div>
+    `,
   );
 
   const rows = databases.map(
@@ -26,6 +32,7 @@ export function databasesListPage(
         <td class="px-4 py-3">
           <a href="/databases/${db.name}" class="text-blue-600 hover:text-blue-800 font-medium">${db.name}</a>
         </td>
+        <td class="px-4 py-3 text-gray-500 font-mono text-xs">${db.size}</td>
         <td class="px-4 py-3">
           ${db.links.length > 0
             ? db.links.map(
@@ -56,11 +63,13 @@ export function databasesListPage(
           enableDestructiveActions
             ? [
                 { header: "Name" },
+                { header: "Size" },
                 { header: "Linked Apps" },
                 { header: "Actions", class: "text-right" },
               ]
             : [
                 { header: "Name" },
+                { header: "Size" },
                 { header: "Linked Apps" },
               ],
           rows,

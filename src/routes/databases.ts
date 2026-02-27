@@ -6,6 +6,14 @@ import { databaseDetailPage } from "../views/pages/database-detail.js";
 import { alert } from "../views/components/alert.js";
 import { nameSchema } from "../lib/validation.js";
 
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "kB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const val = bytes / Math.pow(1024, i);
+  return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
+}
+
 export function databasesRoutes() {
   const app = new Hono<AppBindings>();
 
@@ -18,13 +26,19 @@ export function databasesRoutes() {
       const apps = await dokku.appsListNames();
 
       const databases = await Promise.all(
-        names.map(async (name) => ({
-          name,
-          links: await dokku.postgresLinks(name),
-        })),
+        names.map(async (name) => {
+          const [links, size] = await Promise.all([
+            dokku.postgresLinks(name),
+            dokku.postgresDbSize(name),
+          ]);
+          return { name, links, size: size.pretty, sizeBytes: size.bytes };
+        }),
       );
 
-      return c.html(layout("Databases", databasesListPage(databases, apps, c.get("env").ENABLE_DESTRUCTIVE_ACTIONS), "/databases", c.get("userEmail")));
+      const totalBytes = databases.reduce((sum, db) => sum + db.sizeBytes, 0);
+      const totalSize = formatBytes(totalBytes);
+
+      return c.html(layout("Databases", databasesListPage(databases, apps, c.get("env").ENABLE_DESTRUCTIVE_ACTIONS, totalSize), "/databases", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to list databases";
       return c.html(layout("Databases", alert("error", message), "/databases", c.get("userEmail")));

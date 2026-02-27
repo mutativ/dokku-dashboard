@@ -501,6 +501,22 @@ export class DokkuClient {
     };
   }
 
+  /** Get the size of a postgres database (bytes + human-readable). */
+  async postgresDbSize(dbName: string): Promise<{ bytes: number; pretty: string }> {
+    try {
+      const result = await this.postgresQuery(
+        dbName,
+        "SELECT pg_database_size(current_database()) AS bytes, pg_size_pretty(pg_database_size(current_database())) AS pretty",
+      );
+      if (result.rows.length > 0) {
+        return { bytes: parseInt(result.rows[0][0], 10) || 0, pretty: result.rows[0][1] };
+      }
+    } catch {
+      // ignore — size is best-effort
+    }
+    return { bytes: 0, pretty: "-" };
+  }
+
   // ── Postgres query execution ──────────────────────────────────────────
 
   /** Execute a SQL query via postgres:connect stdin pipe. */
