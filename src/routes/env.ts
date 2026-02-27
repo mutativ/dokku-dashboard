@@ -6,10 +6,11 @@ import { appDetailPage } from "../views/pages/app-detail.js";
 import { alert } from "../views/components/alert.js";
 import { envKeySchema, envValueSchema } from "../lib/validation.js";
 
-const SENSITIVE_PATTERNS = /KEY|SECRET|HASH|PASSWORD|TOKEN|PRIVATE|CREDENTIAL|DSN/i;
+const SENSITIVE_KEY_PATTERNS = /KEY|SECRET|HASH|PASSWORD|TOKEN|PRIVATE|CREDENTIAL|DSN/i;
+const SENSITIVE_VALUE_PATTERNS = /^[a-z]+:\/\/[^:]+:[^@]+@/i; // URLs with credentials like redis://user:pass@host
 
-function isSensitive(key: string): boolean {
-  return SENSITIVE_PATTERNS.test(key);
+function isSensitive(key: string, value: string): boolean {
+  return SENSITIVE_KEY_PATTERNS.test(key) || SENSITIVE_VALUE_PATTERNS.test(value) || value.length > 60;
 }
 
 function envPartial(
@@ -65,7 +66,7 @@ function envPartial(
             <div class="divide-y divide-gray-100">
               ${entries.map(
                 ([key, val]) => {
-                  const sensitive = isSensitive(key);
+                  const sensitive = isSensitive(key, val);
                   const masked = sensitive ? val.slice(0, 4) + "..." + val.slice(-4) : val;
                   const id = `env-${key.replace(/[^a-zA-Z0-9]/g, "_")}`;
                   return html`

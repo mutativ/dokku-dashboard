@@ -1,5 +1,7 @@
-import { html } from "hono/html";
+import { html, raw } from "hono/html";
 import { pageHeader } from "../components/nav.js";
+
+const KEY_FIELDS = new Set(["Status", "Version", "Dsn", "Exposed ports", "Links"]);
 
 export function databaseDetailPage(
   name: string,
@@ -20,6 +22,12 @@ export function databaseDetailPage(
     }
   }
 
+  const keyPairs = pairs.filter(([key]) => KEY_FIELDS.has(key));
+  const otherPairs = pairs.filter(([key]) => !KEY_FIELDS.has(key));
+
+  // Find DSN for copy button
+  const dsn = pairs.find(([key]) => key === "Dsn")?.[1] || "";
+
   return html`
     ${pageHeader(
       name,
@@ -32,22 +40,47 @@ export function databaseDetailPage(
     )}
 
     <div class="grid gap-6">
-      <!-- Info -->
+      <!-- Key Info -->
       <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
           <h3 class="text-sm font-semibold text-gray-700">Database Info</h3>
         </div>
         <div class="divide-y divide-gray-100">
-          ${pairs.map(
+          ${keyPairs.map(
             ([key, val]) => html`
-              <div class="flex px-4 py-2.5 text-sm">
+              <div class="flex items-center px-4 py-2.5 text-sm">
                 <span class="w-48 text-gray-400 shrink-0">${key}</span>
-                <span class="text-gray-700 font-mono text-xs break-all">${val || "-"}</span>
+                <span class="text-gray-700 font-mono text-xs break-all flex-1">${val || "-"}</span>
+                ${key === "Dsn" && val
+                  ? html`<button onclick="navigator.clipboard.writeText('${raw(dsn.replace(/'/g, "\\'"))}').then(function(){this.textContent='Copied!';var b=this;setTimeout(function(){b.textContent='Copy'},1500)}.bind(this))"
+                      class="ml-2 text-xs text-gray-400 hover:text-blue-600 transition-colors shrink-0">Copy</button>`
+                  : html``}
               </div>
             `,
           )}
         </div>
       </div>
+
+      <!-- Raw Report (collapsible) -->
+      ${otherPairs.length > 0
+        ? html`
+            <details class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <summary class="px-4 py-3 bg-gray-50 text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors select-none">
+                Raw Report
+              </summary>
+              <div class="divide-y divide-gray-100">
+                ${otherPairs.map(
+                  ([key, val]) => html`
+                    <div class="flex px-4 py-2.5 text-sm">
+                      <span class="w-48 text-gray-400 shrink-0">${key}</span>
+                      <span class="text-gray-700 font-mono text-xs break-all">${val || "-"}</span>
+                    </div>
+                  `,
+                )}
+              </div>
+            </details>
+          `
+        : html``}
 
       <!-- Linked Apps -->
       <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">

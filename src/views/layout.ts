@@ -2,8 +2,8 @@ import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
 
 const navItems = [
-  { href: "/apps", label: "Apps", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
-  { href: "/databases", label: "Databases", icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" },
+  { href: "/apps", label: "Apps", countKey: "apps", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
+  { href: "/databases", label: "Databases", countKey: "databases", icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" },
 ];
 
 function userInitials(email: string): string {
@@ -82,6 +82,7 @@ export function layout(
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="${item.icon}"/>
             </svg>
             ${item.label}
+            <span id="nav-count-${item.countKey}" class="ml-auto text-[10px] font-medium ${activePath?.startsWith(item.href) ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"} px-1.5 py-0.5 rounded-full hidden"></span>
           </a>`,
             )
             .join(""),
@@ -117,6 +118,15 @@ export function layout(
       </div>
     </main>
   </div>
+
+  <script>
+    fetch('/api/counts').then(function(r){return r.json()}).then(function(d){
+      Object.keys(d).forEach(function(k){
+        var el=document.getElementById('nav-count-'+k);
+        if(el){el.textContent=d[k];el.classList.remove('hidden')}
+      });
+    }).catch(function(){});
+  </script>
 
   <!-- Self-restart reconnection overlay -->
   <div id="reconnect-overlay" class="hidden fixed inset-0 bg-white/90 backdrop-blur-sm z-[100] flex items-center justify-center">

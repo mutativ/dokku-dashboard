@@ -41,6 +41,8 @@ export function appDetailPage(
   return html`
     <div class="flex items-center justify-between mb-6">
       <div class="flex items-center gap-3">
+        <a href="/apps" class="text-sm text-gray-400 hover:text-gray-600 transition-colors">&larr; Apps</a>
+        <span class="text-gray-300">/</span>
         <h2 class="text-2xl font-bold text-gray-900">${appName}</h2>
         ${appInfo ? statusBadge(appInfo.status) : html``}
       </div>
@@ -130,41 +132,36 @@ export function appInfoPartial(appName: string, meta: AppMeta) {
     ? html`<a href="${safeCommitUrl}" target="_blank" rel="noopener" class="text-blue-500 hover:text-blue-700">View commit &rarr;</a>`
     : undefined;
 
+  const deployFields: Array<{ label: string; value: string; isLink?: boolean; href?: string }> = [];
+  if (deployBranch && deployBranch !== "\u2014") deployFields.push({ label: "Branch", value: deployBranch });
+  if (appType) deployFields.push({ label: "App Type", value: appType });
+  if (lastUpdated) deployFields.push({ label: "Last Deployed", value: lastUpdated });
+  if (shortRev) deployFields.push({ label: "Commit", value: shortRev, isLink: !!safeCommitUrl, href: safeCommitUrl });
+
   return html`
     <!-- Overview grid -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
       ${statCard("Status", statusText)}
-      ${statCard("Containers", String(processes.length), processes.length > 0 ? processes.map((p) => p.type).filter((v, i, a) => a.indexOf(v) === i).join(", ") : undefined)}
       ${statCard("Git Rev", shortRev || "\u2014", commitLink)}
-      ${statCard("Restore Policy", restore)}
+      ${statCard("Auto-restart", restore === "true" ? "Enabled" : "Disabled")}
     </div>
 
     <!-- Deploy info -->
-    ${isDeployed
+    ${isDeployed && deployFields.length > 0
       ? html`
           <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
             <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
               <h3 class="text-sm font-semibold text-gray-700">Deploy Info</h3>
             </div>
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-px bg-gray-100">
-              <div class="bg-white p-4">
-                <p class="text-xs text-gray-400 mb-1">Branch</p>
-                <p class="text-sm font-medium text-gray-900 font-mono">${deployBranch}</p>
-              </div>
-              <div class="bg-white p-4">
-                <p class="text-xs text-gray-400 mb-1">App Type</p>
-                <p class="text-sm font-medium text-gray-900">${appType || "\u2014"}</p>
-              </div>
-              <div class="bg-white p-4">
-                <p class="text-xs text-gray-400 mb-1">Last Deployed</p>
-                <p class="text-sm font-medium text-gray-900">${lastUpdated || "\u2014"}</p>
-              </div>
-              <div class="bg-white p-4">
-                <p class="text-xs text-gray-400 mb-1">Commit</p>
-                ${safeCommitUrl
-                  ? html`<a href="${safeCommitUrl}" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:text-blue-800 font-mono">${shortRev}</a>`
-                  : html`<p class="text-sm font-medium text-gray-900 font-mono">${shortRev || "\u2014"}</p>`}
-              </div>
+            <div class="grid grid-cols-2 lg:grid-cols-${String(deployFields.length)} gap-px bg-gray-100">
+              ${deployFields.map((f) => html`
+                <div class="bg-white p-4">
+                  <p class="text-xs text-gray-400 mb-1">${f.label}</p>
+                  ${f.isLink && f.href
+                    ? html`<a href="${f.href}" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:text-blue-800 font-mono">${f.value}</a>`
+                    : html`<p class="text-sm font-medium text-gray-900 font-mono">${f.value}</p>`}
+                </div>
+              `)}
             </div>
           </div>
         `
@@ -229,7 +226,15 @@ export function appLogsPartial(appName: string) {
   return html`
     <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
       <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-gray-700">Live Logs</h3>
+        <div class="flex items-center gap-3">
+          <h3 class="text-sm font-semibold text-gray-700">Live Logs</h3>
+          <button id="log-pause-btn" class="text-xs px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors">Pause</button>
+          <button id="log-clear-btn" class="text-xs px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors">Clear</button>
+          <label class="flex items-center gap-1 text-xs text-gray-500">
+            <input type="checkbox" id="log-autoscroll" checked class="rounded border-gray-300">
+            Auto-scroll
+          </label>
+        </div>
         <span id="sse-status" class="text-xs text-gray-400">Connecting...</span>
       </div>
       <div id="log-container"
@@ -241,31 +246,58 @@ export function appLogsPartial(appName: string) {
       (function() {
         var container = document.getElementById('log-container');
         var status = document.getElementById('sse-status');
+        var pauseBtn = document.getElementById('log-pause-btn');
+        var clearBtn = document.getElementById('log-clear-btn');
+        var autoScrollChk = document.getElementById('log-autoscroll');
         if (!container) return;
         var appName = ${JSON.stringify(appName)};
         var es = new EventSource('/apps/' + encodeURIComponent(appName) + '/logs/stream');
         var first = true;
+        var paused = false;
+        var buffer = [];
+
+        function colorForLine(text) {
+          if (/\\bERROR\\b|\\berror\\b|\\bFATAL\\b|\\bfatal\\b|\\bpanic\\b/.test(text)) return 'text-red-400';
+          if (/\\bWARN\\b|\\bwarn\\b|\\bwarning\\b/.test(text)) return 'text-amber-400';
+          if (/\\bDEBUG\\b|\\bdebug\\b/.test(text)) return 'text-gray-500';
+          return 'text-gray-300';
+        }
+
+        function appendLine(text) {
+          if (first) { container.innerHTML = ''; first = false; }
+          var line = document.createElement('div');
+          line.className = colorForLine(text) + ' whitespace-pre-wrap';
+          line.textContent = text;
+          container.appendChild(line);
+          if (autoScrollChk && autoScrollChk.checked) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
 
         es.addEventListener('log', function(e) {
-          if (first) {
-            container.innerHTML = '';
-            first = false;
-          }
-          var line = document.createElement('div');
-          line.className = 'text-gray-300 whitespace-pre-wrap';
-          line.textContent = e.data;
-          container.appendChild(line);
-          container.scrollTop = container.scrollHeight;
+          if (paused) { buffer.push(e.data); return; }
+          appendLine(e.data);
         });
 
         es.onopen = function() {
-          if (status) status.textContent = 'Streaming via SSE';
-          if (status) status.className = 'text-xs text-green-600';
+          if (status) { status.textContent = 'Streaming via SSE'; status.className = 'text-xs text-green-600'; }
+        };
+        es.onerror = function() {
+          if (status) { status.textContent = 'Disconnected \\u2014 retrying...'; status.className = 'text-xs text-amber-600'; }
         };
 
-        es.onerror = function() {
-          if (status) status.textContent = 'Disconnected \\u2014 retrying...';
-          if (status) status.className = 'text-xs text-amber-600';
+        if (pauseBtn) pauseBtn.onclick = function() {
+          paused = !paused;
+          pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+          if (!paused && buffer.length > 0) {
+            buffer.forEach(appendLine);
+            buffer = [];
+          }
+        };
+
+        if (clearBtn) clearBtn.onclick = function() {
+          container.innerHTML = '';
+          first = false;
         };
       })();
     </script>`)}

@@ -92,6 +92,17 @@ export function createApp(env: DashboardEnv) {
     }),
   );
 
+  // Sidebar counts API
+  app.get("/api/counts", async (c) => {
+    const dk = c.get("dokku");
+    try {
+      const [apps, dbs] = await Promise.all([dk.appsList(), dk.postgresList()]);
+      return c.json({ apps: apps.length, databases: dbs.length });
+    } catch {
+      return c.json({ apps: 0, databases: 0 });
+    }
+  });
+
   // Protected routes
   app.route("/apps", appsRoutes());
   app.route("/databases", databasesRoutes());

@@ -60,7 +60,7 @@ function domainsPartial(appName: string, domains: string[], enableDestructiveAct
               ${domains.map(
                 (domain) => html`
                   <div class="flex items-center justify-between px-4 py-2.5 group hover:bg-gray-50">
-                    <span class="text-sm font-mono text-gray-700">${domain}</span>
+                    <a href="https://${domain}" target="_blank" rel="noopener" class="text-sm font-mono text-blue-600 hover:text-blue-800 hover:underline">${domain}</a>
                     ${enableDestructiveActions
                       ? html`<form method="POST" action="/apps/${appName}/domains/remove" class="opacity-0 group-hover:opacity-100 transition-opacity">
                           <input type="hidden" name="domain" value="${domain}">

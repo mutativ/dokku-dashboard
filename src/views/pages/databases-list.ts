@@ -29,22 +29,20 @@ export function databasesListPage(
         <td class="px-4 py-3">
           ${db.links.length > 0
             ? db.links.map(
-                (link) => html`<span class="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded mr-1">${link}</span>`,
+                (link) => html`<a href="/apps/${link}" class="inline-block bg-gray-100 text-gray-600 hover:text-blue-600 text-xs px-2 py-0.5 rounded mr-1 max-w-[200px] truncate align-bottom" title="${link}">${link}</a>`,
               )
             : html`<span class="text-gray-400 text-xs">none</span>`}
         </td>
-        <td class="px-4 py-3 text-right">
-          <div class="flex gap-2 justify-end">
-            ${enableDestructiveActions
-              ? html`
-                  <button onclick="openLinkModal('${db.name}')"
-                    class="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2.5 py-1 rounded transition-colors">Link</button>
-                  <button onclick="document.getElementById('destroy-db-${db.name}').classList.remove('hidden')"
-                    class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2.5 py-1 rounded transition-colors">Destroy</button>
-                `
-              : html`<span class="text-xs text-gray-400">View only</span>`}
-          </div>
-        </td>
+        ${enableDestructiveActions
+          ? html`<td class="px-4 py-3 text-right">
+              <div class="flex gap-2 justify-end">
+                <button onclick="openLinkModal('${db.name}')"
+                  class="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2.5 py-1 rounded transition-colors">Link</button>
+                <button onclick="document.getElementById('destroy-db-${db.name}').classList.remove('hidden')"
+                  class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2.5 py-1 rounded transition-colors">Destroy</button>
+              </div>
+            </td>`
+          : html``}
       </tr>
     `,
   );
@@ -55,11 +53,16 @@ export function databasesListPage(
     ${databases.length === 0
       ? html`<div class="text-center py-12 text-gray-400">No databases found. Create one to get started.</div>`
       : table(
-          [
-            { header: "Name" },
-            { header: "Linked Apps" },
-            { header: "Actions", class: "text-right" },
-          ],
+          enableDestructiveActions
+            ? [
+                { header: "Name" },
+                { header: "Linked Apps" },
+                { header: "Actions", class: "text-right" },
+              ]
+            : [
+                { header: "Name" },
+                { header: "Linked Apps" },
+              ],
           rows,
         )}
 
