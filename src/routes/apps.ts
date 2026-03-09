@@ -223,10 +223,20 @@ export function appsRoutes() {
 
     return streamSSE(c, async (stream) => {
       let id = 0;
+      // Strip ANSI escape sequences and terminal control codes from log output.
+      // Apps like Envio indexers spam cursor-movement sequences (~10×/s) that
+      // generate thousands of junk SSE events and freeze the browser tab.
+      const ansiRegex = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[[\d;]*m/g;
+      // Lines that are purely whitespace or cursor-control artefacts after stripping
+      const emptyAfterStrip = /^\s*$/;
+
       const { abort } = dokku.streamLogs(
         name,
         (chunk) => {
-          const lines = chunk.split("\n").filter(Boolean);
+          const lines = chunk
+            .replace(ansiRegex, "")
+            .split("\n")
+            .filter((l) => !emptyAfterStrip.test(l));
           for (const line of lines) {
             stream
               .writeSSE({ data: line, event: "log", id: String(++id) })
