@@ -252,9 +252,13 @@ export function appLogsPartial(appName: string) {
         if (!container) return;
         var appName = ${JSON.stringify(appName)};
         var es = new EventSource('/apps/' + encodeURIComponent(appName) + '/logs/stream');
+        var MAX_LINES = 2000;
+        var FLUSH_INTERVAL = 100; // ms – batch DOM updates to avoid layout thrashing
         var first = true;
         var paused = false;
         var buffer = [];
+        var pendingLines = [];
+        var flushScheduled = false;
 
         function colorForLine(text) {
           if (/\\bERROR\\b|\\berror\\b|\\bFATAL\\b|\\bfatal\\b|\\bpanic\\b/.test(text)) return 'text-red-400';
@@ -263,14 +267,33 @@ export function appLogsPartial(appName: string) {
           return 'text-gray-300';
         }
 
-        function appendLine(text) {
+        function flushPending() {
+          flushScheduled = false;
+          if (pendingLines.length === 0) return;
           if (first) { container.innerHTML = ''; first = false; }
-          var line = document.createElement('div');
-          line.className = colorForLine(text) + ' whitespace-pre-wrap';
-          line.textContent = text;
-          container.appendChild(line);
+          var frag = document.createDocumentFragment();
+          for (var i = 0; i < pendingLines.length; i++) {
+            var line = document.createElement('div');
+            line.className = colorForLine(pendingLines[i]) + ' whitespace-pre-wrap';
+            line.textContent = pendingLines[i];
+            frag.appendChild(line);
+          }
+          container.appendChild(frag);
+          pendingLines = [];
+          // Cap DOM nodes to prevent unbounded growth
+          while (container.childNodes.length > MAX_LINES) {
+            container.removeChild(container.firstChild);
+          }
           if (autoScrollChk && autoScrollChk.checked) {
             container.scrollTop = container.scrollHeight;
+          }
+        }
+
+        function appendLine(text) {
+          pendingLines.push(text);
+          if (!flushScheduled) {
+            flushScheduled = true;
+            setTimeout(flushPending, FLUSH_INTERVAL);
           }
         }
 
