@@ -26,74 +26,79 @@ function envPartial(
 
     ${enableDestructiveActions
       ? html`
-          <!-- Set env var form -->
-          <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">Set Environment Variable</h3>
-            <form method="POST" action="/apps/${appName}/env/set" class="flex gap-3 items-end">
-              <div class="flex-1">
-                <label class="block mb-1 text-xs text-gray-400">Key</label>
+          <section class="dk-card">
+            <header class="dk-card-h"><div class="dk-card-title">Set environment variable</div></header>
+            <form method="POST" action="/apps/${appName}/env/set" style="display:flex;gap:8px;padding:12px 16px;align-items:flex-end;flex-wrap:wrap">
+              <label style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;font-size:11px;color:var(--ink-3);font-family:var(--font-mono)">
+                key
                 <input type="text" name="key" required pattern="[A-Z_][A-Z0-9_]*"
-                  class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style="padding:6px 8px;border:1px solid var(--line-2);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:13px;outline:none;color:var(--ink)"
                   placeholder="MY_VAR">
-              </div>
-              <div class="flex-1">
-                <label class="block mb-1 text-xs text-gray-400">Value</label>
+              </label>
+              <label style="display:flex;flex-direction:column;gap:4px;flex:2;min-width:160px;font-size:11px;color:var(--ink-3);font-family:var(--font-mono)">
+                value
                 <input type="text" name="value" required
-                  class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style="padding:6px 8px;border:1px solid var(--line-2);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:13px;outline:none;color:var(--ink)"
                   placeholder="value">
-              </div>
-              <div class="flex gap-2">
-                <label class="flex items-center gap-2 text-xs text-gray-500">
-                  <input type="checkbox" name="no_restart" class="rounded border-gray-300">
-                  No restart
-                </label>
-                <button type="submit"
-                  class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors whitespace-nowrap">Set</button>
-              </div>
+              </label>
+              <label style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3);font-family:var(--font-mono)">
+                <input type="checkbox" name="no_restart"> no restart
+              </label>
+              <button type="submit" class="dk-btn dk-btn-primary">Set</button>
             </form>
-          </div>
+          </section>
         `
-      : html`<div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6 text-xs text-gray-500">View-only mode: environment updates are disabled.</div>`}
+      : html`<div class="dk-ro-banner" style="margin-bottom:16px">
+          <span class="ic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="11" width="14" height="9" rx="2" />
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+            </svg>
+          </span>
+          <span>View-only mode — env edits disabled.</span>
+        </div>`}
 
-    <!-- Current env vars -->
-    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <h3 class="text-sm font-semibold text-gray-700">${entries.length} Environment Variables</h3>
-      </div>
+    <section class="dk-card">
+      <header class="dk-card-h">
+        <div class="dk-card-title">Environment variables</div>
+        <div class="dk-card-meta">${entries.length} key${entries.length === 1 ? "" : "s"}</div>
+      </header>
       ${entries.length === 0
-        ? html`<div class="px-4 py-6 text-center text-gray-400 text-sm">No environment variables set</div>`
-        : html`
-            <div class="divide-y divide-gray-100">
-              ${entries.map(
-                ([key, val]) => {
-                  const sensitive = isSensitive(key, val);
-                  const masked = sensitive ? val.slice(0, 4) + "..." + val.slice(-4) : val;
-                  const id = `env-${key.replace(/[^a-zA-Z0-9]/g, "_")}`;
-                  return html`
-                    <div class="flex items-center justify-between px-4 py-2.5 group hover:bg-gray-50">
-                      <div class="flex-1 min-w-0">
-                        <span class="text-sm font-mono text-blue-600">${key}</span>
-                        <span class="text-gray-300 mx-2">=</span>
-                        <span id="${id}" class="text-sm font-mono text-gray-600 break-all">${masked}</span>
-                        ${sensitive
-                          ? html`<span class="hidden" id="${id}-full">${val}</span>
-                                 <button onclick="var s=document.getElementById('${id}'),f=document.getElementById('${id}-full'),t=this;if(t.dataset.shown){s.textContent=t.dataset.masked;t.textContent='show';delete t.dataset.shown}else{s.textContent=f.textContent;t.textContent='hide';t.dataset.shown='1';t.dataset.masked=s.textContent.length!==f.textContent.length?'${masked}':s.textContent}"
-                                   class="ml-2 text-xs text-gray-400 hover:text-gray-600 transition-colors">show</button>`
-                          : html``}
-                      </div>
-                      ${enableDestructiveActions
-                        ? html`<form method="POST" action="/apps/${appName}/env/unset" class="shrink-0 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <input type="hidden" name="key" value="${key}">
-                            <button class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded transition-colors">Unset</button>
-                          </form>`
-                        : html``}
-                    </div>
-                  `;
-                },
-              )}
-            </div>
-          `}
-    </div>
+        ? html`<div class="dk-empty">No environment variables set</div>`
+        : html`${entries.map(([key, val]) => {
+            const sensitive = isSensitive(key, val);
+            const masked = sensitive ? val.slice(0, 4) + "..." + val.slice(-4) : val;
+            const id = `env-${key.replace(/[^a-zA-Z0-9]/g, "_")}`;
+            return html`
+              <div class="dk-kv">
+                <div class="dk-kv-k mono" style="color:var(--accent)">${key}</div>
+                <div class="dk-kv-v">
+                  <span id="${id}">${masked}</span>
+                  ${sensitive
+                    ? html`<span style="display:none" id="${id}-full">${val}</span>
+                           <button type="button" onclick="var s=document.getElementById('${id}'),f=document.getElementById('${id}-full'),t=this;if(t.dataset.shown){s.textContent=t.dataset.masked;t.textContent='show';delete t.dataset.shown}else{s.textContent=f.textContent;t.textContent='hide';t.dataset.shown='1';t.dataset.masked='${masked}'}"
+                             class="dk-copychip" style="margin-left:8px">show</button>`
+                    : html``}
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="dk-copychip" data-copy="${val}" onclick="(function(b){var v=b.getAttribute('data-copy');navigator.clipboard.writeText(v);var o=b.innerText;b.innerText='Copied';setTimeout(function(){b.innerText=o},1200)})(this)">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="9" y="9" width="11" height="11" rx="2" />
+                      <path d="M5 15V6a2 2 0 0 1 2-2h9" />
+                    </svg>
+                    Copy
+                  </button>
+                  ${enableDestructiveActions
+                    ? html`<form method="POST" action="/apps/${appName}/env/unset" style="display:inline">
+                        <input type="hidden" name="key" value="${key}">
+                        <button type="submit" class="dk-actbtn dk-actbtn-bad">Unset</button>
+                      </form>`
+                    : html``}
+                </div>
+              </div>
+            `;
+          })}`}
+    </section>
   `;
 }
 
@@ -109,8 +114,12 @@ export function envRoutes() {
 
     try {
       const canMutate = c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
-      const [vars, apps] = await Promise.all([dokku.configShow(name), dokku.appsList()]);
-      const appInfo = apps.find((a) => a.name === name);
+      const varsPromise = dokku.configShow(name);
+      const appInfoPromise = partial === "1"
+        ? Promise.resolve(undefined)
+        : dokku.appInfo(name).catch(() => undefined);
+      const [vars, appInfo] = await Promise.all([varsPromise, appInfoPromise]);
+      if (appInfo && vars.DOKKU_APP_TYPE) appInfo.appType = vars.DOKKU_APP_TYPE;
       const content = envPartial(name, vars, canMutate);
 
       if (partial === "1") return c.html(content);

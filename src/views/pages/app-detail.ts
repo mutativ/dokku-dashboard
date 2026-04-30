@@ -3,30 +3,39 @@ import type { HtmlEscapedString } from "hono/utils/html";
 import type { AppInfo, AppMeta } from "../../lib/dokku.js";
 import { tabs } from "../components/nav.js";
 import { statusBadge } from "../components/badge.js";
-import { actionBtn } from "../components/action-btn.js";
+import { actionBtn, readonlyChip } from "../components/action-btn.js";
 
-function headerActions(appName: string, appInfo?: AppInfo, enableDestructiveActions = true) {
-  if (!enableDestructiveActions) {
-    return html`<span class="text-xs font-medium bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">View only mode</span>`;
+const REPO_PATTERN = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+const REV_PATTERN = /^[0-9a-f]+$/;
+
+function headerActions(appName: string, appInfo?: AppInfo, enableDestructive = true) {
+  if (!enableDestructive) {
+    return html`
+      <div class="dk-action-row">
+        ${readonlyChip("Restart", "warn")}
+        ${readonlyChip("Stop",    "neutral")}
+        ${readonlyChip("Rebuild", "accent")}
+        ${readonlyChip("Destroy", "bad")}
+      </div>
+    `;
   }
   const status = appInfo?.status ?? "unknown";
-
   return html`
-    <div class="flex items-center gap-2">
+    <div class="dk-action-row">
       ${status === "running"
         ? html`
-            ${actionBtn(appName, "restart", "Restart", "bg-amber-100 hover:bg-amber-200 text-amber-700", "md", `Restart ${appName}?`)}
-            ${actionBtn(appName, "stop", "Stop", "bg-gray-200 hover:bg-gray-300 text-gray-600", "md", `Stop ${appName}?`)}
-            ${actionBtn(appName, "rebuild", "Rebuild", "bg-purple-100 hover:bg-purple-200 text-purple-700", "md", `Rebuild ${appName}? This may take a few minutes.`)}
+            ${actionBtn(appName, "restart", "Restart", "", "sm", `Restart ${appName}?`)}
+            ${actionBtn(appName, "stop",    "Stop",    "", "sm", `Stop ${appName}?`)}
+            ${actionBtn(appName, "rebuild", "Rebuild", "", "sm", `Rebuild ${appName}? This may take a few minutes.`)}
           `
         : status === "stopped"
           ? html`
-              ${actionBtn(appName, "start", "Start", "bg-green-100 hover:bg-green-200 text-green-700", "md")}
-              ${actionBtn(appName, "rebuild", "Rebuild", "bg-purple-100 hover:bg-purple-200 text-purple-700", "md", `Rebuild ${appName}? This may take a few minutes.`)}
+              ${actionBtn(appName, "start",   "Start",   "", "sm")}
+              ${actionBtn(appName, "rebuild", "Rebuild", "", "sm", `Rebuild ${appName}? This may take a few minutes.`)}
             `
           : html``}
       <button onclick="document.getElementById('destroy-modal').classList.remove('hidden')"
-        class="text-sm bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded-lg transition-colors">Destroy</button>
+        class="dk-actbtn dk-actbtn-bad">Destroy</button>
     </div>
   `;
 }
@@ -38,13 +47,28 @@ export function appDetailPage(
   appInfo?: AppInfo,
   enableDestructiveActions = true,
 ) {
+  const status = appInfo?.status ?? "unknown";
   return html`
-    <div class="flex items-center justify-between mb-6">
-      <div class="flex items-center gap-3">
-        <a href="/apps" class="text-sm text-gray-400 hover:text-gray-600 transition-colors">&larr; Apps</a>
-        <span class="text-gray-300">/</span>
-        <h2 class="text-2xl font-bold text-gray-900">${appName}</h2>
-        ${appInfo ? statusBadge(appInfo.status) : html``}
+    <a href="/apps" class="dk-detail-back">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 18l-6-6 6-6" />
+      </svg>
+      Apps
+    </a>
+
+    <div class="dk-detail-head">
+      <div>
+        <div class="dk-detail-title-row">
+          <div class="dk-detail-title">${appName}</div>
+          ${appInfo ? statusBadge(status) : html``}
+        </div>
+        ${appInfo ? html`
+          <div class="dk-detail-meta">
+            ${appInfo.appType ? `${appInfo.appType.toLowerCase()}` : "untyped"}
+            ${appInfo.processCount ? html` · ${appInfo.processCount} ${appInfo.processCount === 1 ? "process" : "processes"}` : html``}
+            ${appInfo.domains.length ? html` · ${appInfo.domains[0]}` : html``}
+          </div>
+        ` : html``}
       </div>
       ${headerActions(appName, appInfo, enableDestructiveActions)}
     </div>
@@ -57,22 +81,16 @@ export function appDetailPage(
 
     ${enableDestructiveActions
       ? html`
-          <!-- Destroy confirmation -->
           <div id="destroy-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div class="bg-white border border-gray-200 rounded-xl w-full max-w-md p-6 shadow-xl">
-              <h3 class="text-lg font-bold text-red-600 mb-2">Destroy App</h3>
-              <p class="text-sm text-gray-600 mb-4">
-                This will permanently destroy <strong class="text-gray-900">${appName}</strong> and all its data.
-                This action cannot be undone.
+            <div class="dk-modal w-full max-w-md p-6" style="box-shadow:0 20px 50px oklch(0 0 0 / 0.18)">
+              <h3 style="font-weight:600;font-size:16px;color:var(--bad);margin-bottom:8px">Destroy App</h3>
+              <p style="font-size:13px;color:var(--ink-2);margin-bottom:14px">
+                This will permanently destroy <strong style="color:var(--ink)">${appName}</strong> and all its data. This cannot be undone.
               </p>
-              <div class="flex gap-3 justify-end">
-                <button type="button" onclick="document.getElementById('destroy-modal').classList.add('hidden')"
-                  class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
+              <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button type="button" onclick="document.getElementById('destroy-modal').classList.add('hidden')" class="dk-btn dk-btn-ghost">Cancel</button>
                 <form method="POST" action="/apps/${appName}/destroy">
-                  <button type="submit"
-                    class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    Destroy
-                  </button>
+                  <button type="submit" class="dk-actbtn dk-actbtn-bad" style="padding:7px 13px">Destroy</button>
                 </form>
               </div>
             </div>
@@ -82,141 +100,131 @@ export function appDetailPage(
   `;
 }
 
-// ── Stat card helper ──────────────────────────────────────────────────
-
-function statCard(
-  label: string,
-  value: string,
-  sub?: HtmlEscapedString | Promise<HtmlEscapedString> | string,
-) {
-  return html`
-    <div class="bg-white border border-gray-200 rounded-lg p-4">
-      <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">${label}</p>
-      <p class="text-lg font-semibold text-gray-900">${value || "\u2014"}</p>
-      ${sub ? html`<p class="text-xs text-gray-400 mt-0.5">${sub}</p>` : html``}
-    </div>
-  `;
-}
-
-function processStatusBadge(status: string) {
+function processStatusDot(status: string) {
   const lower = status.toLowerCase();
-  const color = lower === "running" ? "bg-green-500"
-    : (lower === "stopped" || lower === "exited") ? "bg-red-500"
-    : "bg-gray-400";
-  return html`<span class="inline-block w-2 h-2 rounded-full ${color} mr-1.5"></span>`;
+  const cls = lower === "running"
+    ? ""
+    : (lower === "stopped" || lower === "exited")
+      ? "is-bad"
+      : "is-warn";
+  return html`<span class="dk-proc-status ${cls}">
+    <span class="dot"></span>
+    <span style="font-family:var(--font-mono);font-size:12px">${status}</span>
+  </span>`;
 }
-
-// Validate repo format to prevent XSS in constructed URLs
-const REPO_PATTERN = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
-const REV_PATTERN = /^[0-9a-f]+$/;
 
 export function appInfoPartial(appName: string, meta: AppMeta) {
   const { psReport, gitReport, gitRev, appType, githubRepo, processes } = meta;
 
   const isRunning = psReport["Running"]?.toLowerCase() === "true";
   const isDeployed = psReport["Deployed"]?.toLowerCase() === "true";
-  const restore = psReport["Restore"] || "\u2014";
+  const restore = psReport["Restore"] || "—";
   const statusText = isRunning ? "Running" : isDeployed ? "Stopped" : "Not deployed";
-
-  // Build commit URL only if repo and rev match safe patterns
   const shortRev = gitRev ? gitRev.slice(0, 7) : "";
+
   const safeCommitUrl = (REPO_PATTERN.test(githubRepo) && REV_PATTERN.test(gitRev))
     ? `https://github.com/${githubRepo}/commit/${gitRev}`
     : "";
 
-  // Deploy branch and time from git:report
-  const deployBranch = gitReport?.deployBranch || "\u2014";
+  const deployBranch = gitReport?.deployBranch || "";
   const lastUpdated = gitReport?.lastUpdatedAt || "";
 
-  const commitLink = safeCommitUrl
-    ? html`<a href="${safeCommitUrl}" target="_blank" rel="noopener" class="text-blue-500 hover:text-blue-700">View commit &rarr;</a>`
-    : undefined;
-
-  const deployFields: Array<{ label: string; value: string; isLink?: boolean; href?: string }> = [];
-  if (deployBranch && deployBranch !== "\u2014") deployFields.push({ label: "Branch", value: deployBranch });
-  if (appType) deployFields.push({ label: "App Type", value: appType });
-  if (lastUpdated) deployFields.push({ label: "Last Deployed", value: lastUpdated });
-  if (shortRev) deployFields.push({ label: "Commit", value: shortRev, isLink: !!safeCommitUrl, href: safeCommitUrl });
-
   return html`
-    <!-- Overview grid -->
-    <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-      ${statCard("Status", statusText)}
-      ${statCard("Git Rev", shortRev || "\u2014", commitLink)}
-      ${statCard("Auto-restart", restore === "true" ? "Enabled" : "Disabled")}
+    <div class="dk-stats">
+      <div class="dk-stat">
+        <div class="dk-stat-label">Status</div>
+        <div class="dk-stat-value">${statusText}</div>
+        <div class="dk-stat-meta">${processes.length} ${processes.length === 1 ? "process" : "processes"}</div>
+      </div>
+      <div class="dk-stat">
+        <div class="dk-stat-label">Git Rev</div>
+        <div class="dk-stat-value mono" style="font-size:16px">${shortRev || "—"}</div>
+        <div class="dk-stat-meta">
+          ${safeCommitUrl
+            ? html`<a href="${safeCommitUrl}" target="_blank" rel="noopener">view commit ↗</a>`
+            : "—"}
+        </div>
+      </div>
+      <div class="dk-stat">
+        <div class="dk-stat-label">Auto‑Restart</div>
+        <div class="dk-stat-value">${restore === "true" ? "Enabled" : "Disabled"}</div>
+        <div class="dk-stat-meta">${psReport["Restore"] || "—"}</div>
+      </div>
     </div>
 
-    <!-- Deploy info -->
-    ${isDeployed && deployFields.length > 0
-      ? html`
-          <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
-            <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
-              <h3 class="text-sm font-semibold text-gray-700">Deploy Info</h3>
-            </div>
-            <div class="grid grid-cols-2 lg:grid-cols-${String(deployFields.length)} gap-px bg-gray-100">
-              ${deployFields.map((f) => html`
-                <div class="bg-white p-4">
-                  <p class="text-xs text-gray-400 mb-1">${f.label}</p>
-                  ${f.isLink && f.href
-                    ? html`<a href="${f.href}" target="_blank" rel="noopener" class="text-sm font-medium text-blue-600 hover:text-blue-800 font-mono">${f.value}</a>`
-                    : html`<p class="text-sm font-medium text-gray-900 font-mono">${f.value}</p>`}
-                </div>
-              `)}
-            </div>
-          </div>
-        `
-      : html``}
+    <section class="dk-card">
+      <header class="dk-card-h"><div class="dk-card-title">Deploy Info</div></header>
+      <div class="dk-card-b">
+        <div class="dk-kv">
+          <div class="dk-kv-k">App type</div>
+          <div class="dk-kv-v">${appType || "—"}</div>
+          <div></div>
+        </div>
+        ${deployBranch ? html`
+          <div class="dk-kv">
+            <div class="dk-kv-k">Branch</div>
+            <div class="dk-kv-v">${deployBranch}</div>
+            <div></div>
+          </div>` : html``}
+        ${shortRev ? html`
+          <div class="dk-kv">
+            <div class="dk-kv-k">Commit</div>
+            <div class="dk-kv-v">${shortRev}</div>
+            <div></div>
+          </div>` : html``}
+        ${lastUpdated ? html`
+          <div class="dk-kv">
+            <div class="dk-kv-k">Last deployed</div>
+            <div class="dk-kv-v">${lastUpdated}</div>
+            <div></div>
+          </div>` : html``}
+      </div>
+    </section>
 
-    <!-- Process list -->
-    ${processes.length > 0
-      ? html`
-          <div class="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
-            <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
-              <h3 class="text-sm font-semibold text-gray-700">Processes</h3>
-            </div>
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 bg-gray-50/50">
-                  <th class="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Container</th>
-                  <th class="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Type</th>
-                  <th class="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100">
-                ${processes.map(
-                  (p) => html`
-                    <tr>
-                      <td class="px-4 py-2.5 font-mono text-xs text-gray-700">${p.name}</td>
-                      <td class="px-4 py-2.5 text-gray-600">${p.type}</td>
-                      <td class="px-4 py-2.5">
-                        <span class="inline-flex items-center text-xs">
-                          ${processStatusBadge(p.status)}
-                          ${p.status}
-                        </span>
-                      </td>
-                    </tr>
-                  `,
-                )}
-              </tbody>
-            </table>
-          </div>
-        `
-      : html``}
+    ${processes.length > 0 ? html`
+      <section class="dk-card">
+        <header class="dk-card-h">
+          <div class="dk-card-title">Processes</div>
+          <div class="dk-card-meta">${processes.length} container${processes.length === 1 ? "" : "s"}</div>
+        </header>
+        <table class="dk-proc-tbl">
+          <thead>
+            <tr>
+              <th>Container</th>
+              <th>Type</th>
+              <th class="al-r">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${processes.map((p) => html`
+              <tr>
+                <td class="mono">${p.name}</td>
+                <td class="mono">${p.type}</td>
+                <td class="al-r">${processStatusDot(p.status)}</td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      </section>
+    ` : html``}
 
-    <!-- Raw report (collapsible) -->
-    <details class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <summary class="px-4 py-3 bg-gray-50 text-sm font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors select-none">
-        Raw Report
+    <details class="dk-raw">
+      <summary>
+        <span class="dk-raw-caret">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </span>
+        <span>Raw Report</span>
+        <span class="dk-raw-meta">${Object.keys(psReport).length} lines</span>
       </summary>
-      <div class="divide-y divide-gray-100">
-        ${Object.entries(psReport).map(
-          ([key, val]) => html`
-            <div class="flex px-4 py-2.5 text-sm">
-              <span class="w-64 text-gray-400 shrink-0">${key}</span>
-              <span class="text-gray-700 font-mono text-xs break-all">${val || "\u2014"}</span>
-            </div>
-          `,
-        )}
+      <div class="dk-raw-list">
+        ${Object.entries(psReport).map(([key, val]) => html`
+          <div class="dk-raw-kv">
+            <span class="dk-raw-kv-k">${key}</span>
+            <span class="dk-raw-kv-v">${val || "—"}</span>
+          </div>
+        `)}
       </div>
     </details>
   `;
@@ -224,48 +232,63 @@ export function appInfoPartial(appName: string, meta: AppMeta) {
 
 export function appLogsPartial(appName: string) {
   return html`
-    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <h3 class="text-sm font-semibold text-gray-700">Live Logs</h3>
-          <button id="log-pause-btn" class="text-xs px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors">Pause</button>
-          <button id="log-clear-btn" class="text-xs px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-100 transition-colors">Clear</button>
-          <label class="flex items-center gap-1 text-xs text-gray-500">
-            <input type="checkbox" id="log-autoscroll" checked class="rounded border-gray-300">
-            Auto-scroll
-          </label>
+    <section class="dk-card">
+      <header class="dk-card-h">
+        <div class="dk-card-title">Logs</div>
+        <div class="dk-card-action">
+          <button id="log-pause-btn" class="dk-btn dk-btn-ghost">Pause</button>
+          <button id="log-clear-btn" class="dk-btn dk-btn-ghost">Clear</button>
         </div>
-        <span id="sse-status" class="text-xs text-gray-400">Connecting...</span>
+      </header>
+
+      <div class="dk-logs-toolbar">
+        <span class="dk-live-dot" id="log-live-dot"></span>
+        <span id="sse-status" style="font-size:12px;color:var(--ink-3);font-family:var(--font-mono)">connecting…</span>
+        <div class="dk-logs-search" style="margin-left:auto">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M20 20l-3.5-3.5" />
+          </svg>
+          <input id="log-filter" placeholder="Filter logs…">
+        </div>
+        <label style="font-size:11px;color:var(--ink-3);display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono)">
+          <input type="checkbox" id="log-autoscroll" checked> auto-scroll
+        </label>
       </div>
-      <div id="log-container"
-           class="p-4 font-mono text-xs leading-relaxed h-[500px] overflow-y-auto bg-gray-900">
-        <div class="text-gray-500">Connecting to log stream...</div>
+
+      <div id="log-container" class="dk-logs">
+        <div style="color:oklch(0.55 0.01 80)"># connecting to log stream…</div>
       </div>
-    </div>
+    </section>
     ${raw(`<script>
       (function() {
         var container = document.getElementById('log-container');
         var status = document.getElementById('sse-status');
+        var liveDot = document.getElementById('log-live-dot');
         var pauseBtn = document.getElementById('log-pause-btn');
         var clearBtn = document.getElementById('log-clear-btn');
+        var filterEl = document.getElementById('log-filter');
         var autoScrollChk = document.getElementById('log-autoscroll');
         if (!container) return;
         var appName = ${JSON.stringify(appName)};
         var es = new EventSource('/apps/' + encodeURIComponent(appName) + '/logs/stream');
         var MAX_LINES = 2000;
-        var FLUSH_INTERVAL = 100; // ms – batch DOM updates to avoid layout thrashing
+        var FLUSH_INTERVAL = 100;
         var first = true;
         var paused = false;
         var buffer = [];
         var pendingLines = [];
         var flushScheduled = false;
+        var filter = '';
 
-        function colorForLine(text) {
-          if (/\\bERROR\\b|\\berror\\b|\\bFATAL\\b|\\bfatal\\b|\\bpanic\\b/.test(text)) return 'text-red-400';
-          if (/\\bWARN\\b|\\bwarn\\b|\\bwarning\\b/.test(text)) return 'text-amber-400';
-          if (/\\bDEBUG\\b|\\bdebug\\b/.test(text)) return 'text-gray-500';
-          return 'text-gray-300';
+        function classForLine(text) {
+          if (/\\bERROR\\b|\\berror\\b|\\bFATAL\\b|\\bfatal\\b|\\bpanic\\b/.test(text)) return 'log-err';
+          if (/\\bWARN\\b|\\bwarn\\b|\\bwarning\\b/.test(text)) return 'log-warn';
+          if (/\\bDEBUG\\b|\\bdebug\\b/.test(text)) return 'log-debug';
+          return '';
         }
+
+        function shouldShow(text) { return !filter || text.toLowerCase().indexOf(filter) !== -1; }
 
         function flushPending() {
           flushScheduled = false;
@@ -274,19 +297,16 @@ export function appLogsPartial(appName: string) {
           var frag = document.createDocumentFragment();
           for (var i = 0; i < pendingLines.length; i++) {
             var line = document.createElement('div');
-            line.className = colorForLine(pendingLines[i]) + ' whitespace-pre-wrap';
+            line.className = classForLine(pendingLines[i]);
+            line.style.whiteSpace = 'pre-wrap';
             line.textContent = pendingLines[i];
+            if (!shouldShow(pendingLines[i])) line.style.display = 'none';
             frag.appendChild(line);
           }
           container.appendChild(frag);
           pendingLines = [];
-          // Cap DOM nodes to prevent unbounded growth
-          while (container.childNodes.length > MAX_LINES) {
-            container.removeChild(container.firstChild);
-          }
-          if (autoScrollChk && autoScrollChk.checked) {
-            container.scrollTop = container.scrollHeight;
-          }
+          while (container.childNodes.length > MAX_LINES) container.removeChild(container.firstChild);
+          if (autoScrollChk && autoScrollChk.checked) container.scrollTop = container.scrollHeight;
         }
 
         function appendLine(text) {
@@ -301,26 +321,31 @@ export function appLogsPartial(appName: string) {
           if (paused) { buffer.push(e.data); return; }
           appendLine(e.data);
         });
-
         es.onopen = function() {
-          if (status) { status.textContent = 'Streaming via SSE'; status.className = 'text-xs text-green-600'; }
+          if (status) status.textContent = 'streaming';
+          if (liveDot) liveDot.style.opacity = '1';
         };
         es.onerror = function() {
-          if (status) { status.textContent = 'Disconnected \\u2014 retrying...'; status.className = 'text-xs text-amber-600'; }
+          if (status) status.textContent = 'reconnecting…';
+          if (liveDot) liveDot.style.opacity = '0.3';
         };
 
         if (pauseBtn) pauseBtn.onclick = function() {
           paused = !paused;
           pauseBtn.textContent = paused ? 'Resume' : 'Pause';
-          if (!paused && buffer.length > 0) {
-            buffer.forEach(appendLine);
-            buffer = [];
-          }
+          if (status) status.textContent = paused ? 'paused' : 'streaming';
+          if (liveDot) liveDot.style.opacity = paused ? '0.3' : '1';
+          if (!paused && buffer.length > 0) { buffer.forEach(appendLine); buffer = []; }
         };
 
-        if (clearBtn) clearBtn.onclick = function() {
-          container.innerHTML = '';
-          first = false;
+        if (clearBtn) clearBtn.onclick = function() { container.innerHTML = ''; first = false; };
+
+        if (filterEl) filterEl.oninput = function() {
+          filter = (filterEl.value || '').toLowerCase();
+          var nodes = container.children;
+          for (var i = 0; i < nodes.length; i++) {
+            nodes[i].style.display = shouldShow(nodes[i].textContent) ? '' : 'none';
+          }
         };
       })();
     </script>`)}

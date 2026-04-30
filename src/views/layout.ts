@@ -1,21 +1,66 @@
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
 
-const navItems = [
-  { href: "/apps", label: "Apps", countKey: "apps", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
-  { href: "/databases", label: "Databases", countKey: "databases", icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" },
+const APP_VERSION = process.env.APP_VERSION ?? "dev";
+const SERVER_HOST = process.env.DOKKU_SSH_HOST ?? "localhost";
+
+const navItems: Array<{
+  href: string;
+  label: string;
+  countKey: string;
+  iconPaths: string[];
+}> = [
+  {
+    href: "/apps",
+    label: "Apps",
+    countKey: "apps",
+    iconPaths: [
+      "M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z",
+      "M4 7.5l8 4.5 8-4.5",
+      "M12 12v9",
+    ],
+  },
+  {
+    href: "/databases",
+    label: "Databases",
+    countKey: "databases",
+    iconPaths: [],
+  },
 ];
 
-function userInitials(email: string): string {
-  const name = email.split("@")[0];
-  const parts = name.split(/[._-]/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return name.slice(0, 2).toUpperCase();
+function dbIcon() {
+  return html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="12" cy="5.5" rx="7" ry="2.5" />
+    <path d="M5 5.5v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6" />
+    <path d="M5 11.5v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6" />
+  </svg>`;
 }
 
-const APP_VERSION = process.env.APP_VERSION ?? "dev";
+function appsIcon() {
+  return html`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+    <path d="M4 7.5l8 4.5 8-4.5" />
+    <path d="M12 12v9" />
+  </svg>`;
+}
+
+function brandGlyph() {
+  return html`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 7l8 4 8-4-8-4-8 4z" />
+    <path d="M4 12l8 4 8-4" />
+    <path d="M4 17l8 4 8-4" />
+  </svg>`;
+}
+
+function navLink(item: typeof navItems[number], activePath?: string) {
+  const isActive = activePath?.startsWith(item.href) ?? false;
+  return html`<a href="${item.href}"
+       class="dk-nav-link ${isActive ? "is-active" : ""}">
+    <span class="ic">${item.countKey === "apps" ? appsIcon() : dbIcon()}</span>
+    <span>${item.label}</span>
+    <span id="nav-count-${item.countKey}" class="dk-nav-count" style="display:none"></span>
+  </a>`;
+}
 
 export function layout(
   title: string,
@@ -23,17 +68,18 @@ export function layout(
   activePath?: string,
   userEmail?: string,
 ) {
-  const initials = userEmail ? userInitials(userEmail) : "";
-
   return html`<!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${title} - Dokku Dashboard</title>
+  <title>${title} — VPS Console</title>
   <link rel="icon" type="image/png" sizes="32x32" href="/public/favicon-32.png">
   <link rel="apple-touch-icon" href="/public/apple-touch-icon.png">
-  <link rel="stylesheet" href="/public/styles.css?v=2">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/public/styles.css?v=3">
   <script src="/public/htmx.min.js"></script>
   <script>
     document.addEventListener('htmx:configRequest', function(e) {
@@ -41,79 +87,77 @@ export function layout(
       if (m) e.detail.headers['X-CSRF-Token'] = m[1];
     });
   </script>
-  <style>
-    [hx-indicator] .htmx-indicator { display: none; }
-    [hx-indicator].htmx-request .htmx-indicator { display: inline-block; }
-    .htmx-request .htmx-indicator { display: inline-block; }
-    .htmx-request.htmx-action-btn .btn-label { display: none; }
-    .htmx-action-btn .btn-spinner { display: none; }
-    .htmx-request.htmx-action-btn .btn-spinner { display: inline-block; }
-    .spinner { border: 3px solid rgb(209 213 219); border-top-color: rgb(37 99 235); border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; display: inline-block; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-    .toast-slide-in { animation: slideIn 0.3s ease-out, fadeOut 0.3s ease-in 3s forwards; }
-  </style>
 </head>
-<body class="h-full bg-gray-50 text-gray-900">
+<body>
   <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2"></div>
-  <div class="flex h-full">
-    <!-- Sidebar -->
-    <aside class="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
-      <div class="px-4 py-4 border-b border-gray-200">
-        <div class="flex items-center gap-3">
-          <img src="/public/logo-192.png" alt="Dokku Dashboard" width="28" height="28" class="rounded-lg shrink-0">
-          <span class="text-sm font-semibold text-gray-900 tracking-tight">Dokku Dashboard</span>
+
+  <div class="dk-shell">
+    <aside class="dk-side">
+      <div class="dk-side-brand">
+        <div class="dk-brand-mark">${brandGlyph()}</div>
+        <div>
+          <div class="dk-brand-name">VPS Console</div>
+          <div class="dk-brand-sub">dokku · ${APP_VERSION}</div>
         </div>
       </div>
 
-      <nav class="flex-1 px-3 py-4 space-y-1">
-        ${raw(
-          navItems
-            .map(
-              (item) => `
-          <a href="${item.href}"
-             class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-               activePath?.startsWith(item.href)
-                 ? "bg-blue-50 text-blue-700"
-                 : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-             }">
-            <svg width="20" height="20" class="shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="${item.icon}"/>
-            </svg>
-            ${item.label}
-            <span id="nav-count-${item.countKey}" class="ml-auto text-[10px] font-medium ${activePath?.startsWith(item.href) ? "bg-blue-100 text-blue-600" : "bg-gray-100 text-gray-500"} px-1.5 py-0.5 rounded-full hidden"></span>
-          </a>`,
-            )
-            .join(""),
-        )}
+      <nav class="dk-side-nav">
+        ${navItems.map((item) => navLink(item, activePath))}
       </nav>
 
-      <div class="px-3 py-4 border-t border-gray-200">
-        ${userEmail
-          ? html`
-              <div class="flex items-center gap-3 px-2 mb-3">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shrink-0">${initials}</div>
-                <div class="min-w-0">
-                  <p class="text-xs text-gray-600 truncate">${userEmail}</p>
-                </div>
-              </div>
-            `
-          : html``}
-        <a href="/logout"
-           class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
-          <svg width="16" height="16" class="shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+      <div class="dk-server-card">
+        <div class="dk-server-row">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="7" rx="2" />
+            <rect x="3" y="13" width="18" height="7" rx="2" />
+            <circle cx="7" cy="7.5" r="0.6" fill="currentColor" />
+            <circle cx="7" cy="16.5" r="0.6" fill="currentColor" />
           </svg>
-          Sign out
+          <span class="dk-server-host">${SERVER_HOST}</span>
+        </div>
+        <div class="dk-server-region" style="margin-top:2px;padding-left:22px">
+          dokku host
+        </div>
+        <div class="dk-server-stat">
+          <div class="dk-server-stat-row" id="srv-stats" style="display:none">
+            <span>apps</span>
+            <span class="dk-bar"><span class="dk-bar-fill dk-bar-accent" id="srv-apps-bar" style="width:0%"></span></span>
+            <span id="srv-apps-count">0</span>
+          </div>
+          <div class="dk-server-stat-row" id="srv-dbs" style="display:none">
+            <span>dbs</span>
+            <span class="dk-bar"><span class="dk-bar-fill dk-bar-ok" id="srv-dbs-bar" style="width:0%"></span></span>
+            <span id="srv-dbs-count">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="dk-side-foot">
+        ${userEmail
+          ? html`<div class="dk-side-meta" style="margin-bottom:8px">
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">${userEmail}</span>
+            </div>`
+          : html``}
+        <a href="/logout" class="dk-nav-link">
+          <span class="ic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4" />
+              <path d="M16 17l5-5-5-5" />
+              <path d="M21 12H10" />
+            </svg>
+          </span>
+          <span>Sign out</span>
         </a>
-        <p class="mt-3 px-3 text-[10px] text-gray-400 font-mono">${APP_VERSION}</p>
+        <div class="dk-side-meta">
+          <span>${userEmail ?? ""}</span>
+          <span>${APP_VERSION}</span>
+        </div>
       </div>
     </aside>
 
-    <!-- Main content -->
-    <main class="flex-1 overflow-y-auto">
-      <div class="max-w-6xl mx-auto px-8 py-8">
+    <main class="dk-main">
+      <div class="dk-topbar"></div>
+      <div class="dk-page">
         ${content}
       </div>
     </main>
@@ -123,12 +167,23 @@ export function layout(
     fetch('/api/counts').then(function(r){return r.json()}).then(function(d){
       Object.keys(d).forEach(function(k){
         var el=document.getElementById('nav-count-'+k);
-        if(el){el.textContent=d[k];el.classList.remove('hidden')}
+        if(el){el.textContent=d[k];el.style.display='inline-block'}
       });
+      var aps=document.getElementById('srv-apps-count');
+      var dbs=document.getElementById('srv-dbs-count');
+      var apsRow=document.getElementById('srv-stats');
+      var dbsRow=document.getElementById('srv-dbs');
+      var apsBar=document.getElementById('srv-apps-bar');
+      var dbsBar=document.getElementById('srv-dbs-bar');
+      if(aps){aps.textContent=d.apps;}
+      if(dbs){dbs.textContent=d.databases;}
+      if(apsRow){apsRow.style.display='grid';}
+      if(dbsRow){dbsRow.style.display='grid';}
+      if(apsBar){apsBar.style.width=Math.min(100,d.apps*8)+'%';}
+      if(dbsBar){dbsBar.style.width=Math.min(100,d.databases*15)+'%';}
     }).catch(function(){});
   </script>
 
-  <!-- Self-restart reconnection overlay -->
   <div id="reconnect-overlay" class="hidden fixed inset-0 bg-white/90 backdrop-blur-sm z-[100] flex items-center justify-center">
     <div class="text-center">
       <div class="spinner mx-auto mb-4" style="width:32px;height:32px;border-width:3px;"></div>
@@ -152,6 +207,7 @@ export function layout(
       }
     });
   </script>
+  ${raw("")}
 </body>
 </html>`;
 }

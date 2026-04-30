@@ -10,40 +10,49 @@ export function loginPage(opts: LoginPageOpts = {}) {
   const { showGoogle = false, showPassword = true, error } = opts;
 
   return html`<!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Login - Dokku Dashboard</title>
+  <title>Login — VPS Console</title>
   <link rel="icon" type="image/png" sizes="32x32" href="/public/favicon-32.png">
   <link rel="apple-touch-icon" href="/public/apple-touch-icon.png">
-  <link rel="stylesheet" href="/public/styles.css?v=2">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/public/styles.css?v=3">
 </head>
-<body class="h-full bg-gray-50 text-gray-900 flex items-center justify-center">
-  <div class="w-full max-w-sm">
-    <div class="bg-white border border-gray-200 rounded-2xl p-8 shadow-lg">
-      <div class="text-center mb-8">
-        <img src="/public/logo-192.png" alt="Dokku Dashboard" width="56" height="56" class="rounded-xl mx-auto mb-4">
-        <h1 class="text-xl font-bold text-gray-900">Dokku Dashboard</h1>
-        <p class="text-sm text-gray-500 mt-1">Sign in to manage your apps</p>
+<body style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:380px">
+    <div class="dk-card" style="padding:32px;box-shadow:0 8px 24px oklch(0 0 0 / 0.06)">
+      <div style="text-align:center;margin-bottom:28px">
+        <div class="dk-brand-mark" style="width:48px;height:48px;border-radius:11px;margin:0 auto 14px;display:grid;place-items:center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7l8 4 8-4-8-4-8 4z" />
+            <path d="M4 12l8 4 8-4" />
+            <path d="M4 17l8 4 8-4" />
+          </svg>
+        </div>
+        <h1 style="font-size:18px;font-weight:600;letter-spacing:-0.01em">VPS Console</h1>
+        <p style="font-size:13px;color:var(--ink-3);margin-top:4px">Sign in to manage your apps</p>
       </div>
+
       ${error
-        ? html`<div class="bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-lg mb-5 text-sm">${error}</div>`
+        ? html`<div class="dk-pill dk-pill-bad" style="display:block;text-align:center;font-family:var(--font-ui);font-size:13px;padding:8px 12px;margin-bottom:18px">${error}</div>`
         : html``}
 
       ${showGoogle
         ? html`
-            <a href="/auth/google"
-              class="w-full flex items-center justify-center gap-3 bg-white hover:bg-gray-50 text-gray-800 font-medium px-4 py-3 rounded-xl transition-colors border border-gray-300 shadow-sm">
+            <a href="/auth/google" class="dk-btn" style="width:100%;justify-content:center;padding:11px 14px;font-weight:500">
               ${raw(googleIcon)}
-              Sign in with Google
+              <span style="margin-left:6px">Sign in with Google</span>
             </a>
             ${showPassword
               ? html`
-                  <div class="flex items-center gap-3 my-5">
-                    <div class="flex-1 h-px bg-gray-200"></div>
-                    <span class="text-xs text-gray-400">or</span>
-                    <div class="flex-1 h-px bg-gray-200"></div>
+                  <div style="display:flex;align-items:center;gap:10px;margin:18px 0">
+                    <div style="flex:1;height:1px;background:var(--line)"></div>
+                    <span style="font-size:11px;color:var(--ink-4);font-family:var(--font-mono)">or</span>
+                    <div style="flex:1;height:1px;background:var(--line)"></div>
                   </div>
                 `
               : html``}
@@ -53,13 +62,12 @@ export function loginPage(opts: LoginPageOpts = {}) {
       ${showPassword
         ? html`
             <form method="POST" action="/login">
-              <label class="block mb-2 text-sm font-medium text-gray-600">Password</label>
+              <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--ink-3)">Password</label>
               <input type="password" name="password" autofocus
-                class="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl mb-4 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                style="width:100%;padding:10px 12px;border:1px solid var(--line-2);border-radius:var(--radius-sm);font-size:14px;outline:none;margin-bottom:14px;color:var(--ink)"
                 placeholder="Enter password">
-              <button type="submit"
-                class="w-full bg-blue-600 hover:bg-blue-700 px-4 py-3 rounded-xl font-semibold transition-colors text-white">
-                Sign In
+              <button type="submit" class="dk-btn dk-btn-primary" style="width:100%;justify-content:center;padding:10px 14px;font-weight:600">
+                Sign in
               </button>
             </form>
           `
@@ -70,5 +78,4 @@ export function loginPage(opts: LoginPageOpts = {}) {
 </html>`;
 }
 
-// Google "G" logo SVG (per Google branding guidelines)
 const googleIcon = `<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.0 24.0 0 0 0 0 21.56l7.98-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>`;

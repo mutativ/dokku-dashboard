@@ -135,7 +135,7 @@ export class SshPool {
   }
 
   /** Execute a command on the persistent connection. Reconnects if needed. */
-  async exec(args: string[]): Promise<string> {
+  async exec(args: string[], timeoutMs = this.cfg.timeoutMs): Promise<string> {
     assertAllowedCommand(args);
     const cmd = args.map(shellEscape).join(" ");
     const start = performance.now();
@@ -152,15 +152,21 @@ export class SshPool {
       let stdout = "";
       let stderr = "";
       let settled = false;
+      let activeStream: { close: () => void } | undefined;
 
       const timer = setTimeout(() => {
         if (!settled) {
           settled = true;
-          const err = new Error(`SSH command timed out after ${this.cfg.timeoutMs}ms: ${cmd}`);
+          try {
+            activeStream?.close();
+          } catch {
+            // The stream may already be closed by ssh2.
+          }
+          const err = new Error(`SSH command timed out after ${timeoutMs}ms: ${cmd}`);
           auditLog(args, "error", performance.now() - start, err.message);
           reject(err);
         }
-      }, this.cfg.timeoutMs);
+      }, timeoutMs);
 
       conn.exec(cmd, (err, stream) => {
         if (err) {
@@ -178,6 +184,7 @@ export class SshPool {
           }
           return;
         }
+        activeStream = stream;
 
         stream.on("data", (data: Buffer) => {
           stdout += data.toString();
@@ -222,10 +229,16 @@ export class SshPool {
       let stdout = "";
       let stderr = "";
       let settled = false;
+      let activeStream: { close: () => void } | undefined;
 
       const timer = setTimeout(() => {
         if (!settled) {
           settled = true;
+          try {
+            activeStream?.close();
+          } catch {
+            // The stream may already be closed by ssh2.
+          }
           const err = new Error(`SSH command timed out after ${this.cfg.timeoutMs}ms: ${cmd}`);
           auditLog(args, "error", performance.now() - start, err.message);
           reject(err);
@@ -247,6 +260,7 @@ export class SshPool {
           }
           return;
         }
+        activeStream = stream;
 
         stream.on("data", (data: Buffer) => {
           stdout += data.toString();

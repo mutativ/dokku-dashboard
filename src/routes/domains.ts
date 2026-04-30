@@ -10,69 +10,70 @@ function domainsPartial(appName: string, domains: string[], enableDestructiveAct
   return html`
     ${enableDestructiveActions
       ? html`
-          <!-- Add domain form -->
-          <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">Add Domain</h3>
-            <form method="POST" action="/apps/${appName}/domains/add" class="flex gap-3 items-end">
-              <div class="flex-1">
-                <label class="block mb-1 text-xs text-gray-400">Domain</label>
-                <input type="text" name="domain" required
-                  class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="app.example.com">
-              </div>
-              <button type="submit"
-                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">Add</button>
+          <section class="dk-card">
+            <header class="dk-card-h"><div class="dk-card-title">Add domain</div></header>
+            <form method="POST" action="/apps/${appName}/domains/add" style="display:flex;gap:8px;padding:12px 16px;align-items:center">
+              <input type="text" name="domain" required
+                style="flex:1;padding:7px 10px;border:1px solid var(--line-2);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:12.5px;outline:none"
+                placeholder="app.example.com">
+              <button type="submit" class="dk-btn dk-btn-primary">Add</button>
             </form>
-          </div>
-        `
-      : html`<div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-6 text-xs text-gray-500">View-only mode: domain updates are disabled.</div>`}
+          </section>
 
-    <!-- SSL -->
-    ${enableDestructiveActions
-      ? html`
-          <div class="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-            <h3 class="text-sm font-semibold text-gray-700 mb-3">SSL / Let's Encrypt</h3>
-            <div class="flex gap-3">
+          <section class="dk-card">
+            <header class="dk-card-h"><div class="dk-card-title">SSL · Let's Encrypt</div></header>
+            <div style="display:flex;gap:8px;padding:12px 16px">
               <form method="POST" action="/apps/${appName}/domains/ssl/enable">
-                <button class="bg-green-100 hover:bg-green-200 text-green-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  Enable Let's Encrypt
-                </button>
+                <button type="submit" class="dk-actbtn dk-actbtn-ok">Enable</button>
               </form>
               <form method="POST" action="/apps/${appName}/domains/ssl/disable">
-                <button class="bg-gray-200 hover:bg-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                  Disable Let's Encrypt
-                </button>
+                <button type="submit" class="dk-actbtn dk-actbtn-neutral">Disable</button>
               </form>
             </div>
-          </div>
+          </section>
         `
-      : html``}
+      : html`<div class="dk-ro-banner" style="margin-bottom:16px">
+          <span class="ic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="11" width="14" height="9" rx="2" />
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+            </svg>
+          </span>
+          <span>View-only mode — domain edits disabled.</span>
+        </div>`}
 
-    <!-- Current domains -->
-    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
-        <h3 class="text-sm font-semibold text-gray-700">${domains.length} Domains</h3>
-      </div>
+    <section class="dk-card">
+      <header class="dk-card-h">
+        <div class="dk-card-title">Domains</div>
+        <div class="dk-card-meta">${domains.length} ${domains.length === 1 ? "domain" : "domains"}</div>
+      </header>
       ${domains.length === 0
-        ? html`<div class="px-4 py-6 text-center text-gray-400 text-sm">No domains configured</div>`
-        : html`
-            <div class="divide-y divide-gray-100">
-              ${domains.map(
-                (domain) => html`
-                  <div class="flex items-center justify-between px-4 py-2.5 group hover:bg-gray-50">
-                    <a href="https://${domain}" target="_blank" rel="noopener" class="text-sm font-mono text-blue-600 hover:text-blue-800 hover:underline">${domain}</a>
-                    ${enableDestructiveActions
-                      ? html`<form method="POST" action="/apps/${appName}/domains/remove" class="opacity-0 group-hover:opacity-100 transition-opacity">
-                          <input type="hidden" name="domain" value="${domain}">
-                          <button class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded transition-colors">Remove</button>
-                        </form>`
-                      : html``}
-                  </div>
-                `,
-              )}
+        ? html`<div class="dk-empty">No domains configured</div>`
+        : html`${domains.map((domain) => html`
+            <div class="dk-domain-row">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink-3)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3c2.5 3 4 6 4 9s-1.5 6-4 9c-2.5-3-4-6-4-9s1.5-6 4-9z" />
+              </svg>
+              <span class="dk-domain-name">${domain}</span>
+              <a href="https://${domain}" target="_blank" rel="noopener" class="dk-copychip">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 4h6v6" />
+                  <path d="M20 4l-8 8" />
+                  <path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" />
+                </svg>
+                visit
+              </a>
+              ${enableDestructiveActions
+                ? html`<form method="POST" action="/apps/${appName}/domains/remove" style="display:inline">
+                    <input type="hidden" name="domain" value="${domain}">
+                    <button type="submit" class="dk-actbtn dk-actbtn-bad">Remove</button>
+                  </form>`
+                : html``}
             </div>
-          `}
-    </div>
+          `)}`}
+    </section>
   `;
 }
 
@@ -88,8 +89,12 @@ export function domainsRoutes() {
 
     try {
       const canMutate = c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
-      const [domains, apps] = await Promise.all([dokku.domainsReport(name), dokku.appsList()]);
-      const appInfo = apps.find((a) => a.name === name);
+      const domainsPromise = dokku.domainsReport(name);
+      const appInfoPromise = partial === "1"
+        ? Promise.resolve(undefined)
+        : dokku.appInfo(name).catch(() => undefined);
+      const [domains, appInfo] = await Promise.all([domainsPromise, appInfoPromise]);
+      if (appInfo) appInfo.domains = domains;
       const content = domainsPartial(name, domains, canMutate);
 
       if (partial === "1") return c.html(content);

@@ -162,6 +162,10 @@ export class MockDokkuClient extends DokkuClient {
     return MOCK_APPS;
   }
 
+  override async appsListFast(): Promise<AppInfo[]> {
+    return MOCK_APPS;
+  }
+
   override async appsListNames(): Promise<string[]> {
     return MOCK_APPS.map((a) => a.name);
   }
@@ -180,6 +184,27 @@ export class MockDokkuClient extends DokkuClient {
   override async appsReport(name: string): Promise<string> {
     const app = MOCK_APPS.find((a) => a.name === name);
     return `=====> ${name} ps information\n  Deployed: ${app?.deployed ?? false}\n  Running: ${app?.status === "running"}`;
+  }
+
+  override async appInfo(name: string, options: { domains?: string[]; appType?: string } = {}): Promise<AppInfo> {
+    const app = MOCK_APPS.find((a) => a.name === name);
+    if (!app) {
+      return {
+        name,
+        status: "unknown",
+        deployed: false,
+        processCount: 0,
+        processTypes: [],
+        processTypeCounts: {},
+        domains: [],
+        appType: "",
+      };
+    }
+    return {
+      ...app,
+      domains: options.domains ?? [...app.domains],
+      appType: options.appType ?? app.appType,
+    };
   }
 
   override async psStart(name: string): Promise<string> {

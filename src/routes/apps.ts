@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { AppBindings } from "../server.js";
+import type { AppInfo, AppMeta } from "../lib/dokku.js";
 import { layout } from "../views/layout.js";
-import { appsListPage, appsListRows } from "../views/pages/apps-list.js";
+import { appsListErrorRows, appsListPage, appsListRows } from "../views/pages/apps-list.js";
 import { appDetailPage, appInfoPartial, appLogsPartial } from "../views/pages/app-detail.js";
 import { alert } from "../views/components/alert.js";
 import { toastOob } from "../views/components/toast.js";
@@ -16,6 +17,36 @@ function mutationsEnabled(c: { get: (key: "env") => { ENABLE_DESTRUCTIVE_ACTIONS
   return c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
 }
 
+function friendlyAppsError(err: unknown) {
+  const message = err instanceof Error ? err.message : "";
+  if (/timed out/i.test(message)) {
+    return "Dokku is taking longer than expected. Showing cached app data when available.";
+  }
+  return "Unable to refresh the app list right now.";
+}
+
+function appInfoFromMeta(name: string, meta: AppMeta, domains: string[] = []): AppInfo {
+  const isRunning = meta.psReport.Running?.toLowerCase() === "true";
+  const isDeployed = meta.psReport.Deployed?.toLowerCase() === "true";
+  const status = isRunning ? "running" : isDeployed ? "stopped" : "not deployed";
+  const processTypeCounts: Record<string, number> = {};
+
+  for (const process of meta.processes) {
+    processTypeCounts[process.type] = (processTypeCounts[process.type] ?? 0) + 1;
+  }
+
+  return {
+    name,
+    status,
+    deployed: isDeployed || isRunning,
+    processCount: meta.processes.length,
+    processTypes: Object.keys(processTypeCounts),
+    processTypeCounts,
+    domains,
+    appType: meta.appType,
+  };
+}
+
 export function appsRoutes() {
   const app = new Hono<AppBindings>();
 
@@ -25,12 +56,13 @@ export function appsRoutes() {
     const dokku = c.get("dokku");
     const partial = c.req.query("partial");
     try {
-      const apps = await dokku.appsList();
+      const apps = partial === "rows" ? await dokku.appsList() : await dokku.appsListFast();
       const canMutate = mutationsEnabled(c);
       if (partial === "rows") return c.html(appsListRows(apps, canMutate));
       return c.html(layout("Apps", appsListPage(apps, canMutate), "/apps", c.get("userEmail")));
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to list apps";
+      const message = friendlyAppsError(err);
+      if (partial === "rows") return c.html(appsListErrorRows(message));
       return c.html(layout("Apps", alert("error", message), "/apps", c.get("userEmail")));
     }
   });
@@ -65,9 +97,11 @@ export function appsRoutes() {
     const partial = c.req.query("partial");
 
     try {
-      const meta = await dokku.getAppMeta(name);
-      const apps = await dokku.appsList();
-      const appInfo = apps.find((a) => a.name === name);
+      const [meta, domains] = await Promise.all([
+        dokku.getAppMeta(name),
+        dokku.domainsReport(name).catch(() => []),
+      ]);
+      const appInfo = appInfoFromMeta(name, meta, domains);
       const content = appInfoPartial(name, meta);
       const canMutate = mutationsEnabled(c);
 
@@ -207,8 +241,7 @@ export function appsRoutes() {
     const content = appLogsPartial(name);
     if (partial === "1") return c.html(content);
 
-    const apps = await dokku.appsList();
-    const appInfo = apps.find((a) => a.name === name);
+    const appInfo = await dokku.appInfo(name).catch(() => undefined);
     const canMutate = mutationsEnabled(c);
     return c.html(
       layout(name, appDetailPage(name, "logs", content, appInfo, canMutate), "/apps", c.get("userEmail")),

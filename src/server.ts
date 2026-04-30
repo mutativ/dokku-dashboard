@@ -96,7 +96,7 @@ export function createApp(env: DashboardEnv) {
   app.get("/api/counts", async (c) => {
     const dk = c.get("dokku");
     try {
-      const [apps, dbs] = await Promise.all([dk.appsList(), dk.postgresList()]);
+      const [apps, dbs] = await Promise.all([dk.appsListNames(), dk.postgresList()]);
       return c.json({ apps: apps.length, databases: dbs.length });
     } catch {
       return c.json({ apps: 0, databases: 0 });

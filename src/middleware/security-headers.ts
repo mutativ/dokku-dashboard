@@ -26,10 +26,10 @@ export function securityHeadersMiddleware() {
       [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
         "connect-src 'self'",
         "img-src 'self' data:",
-        "font-src 'self' https://cdn.jsdelivr.net",
+        "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com",
       ].join("; "),
     );
 

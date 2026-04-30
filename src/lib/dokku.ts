@@ -63,26 +63,39 @@ interface CacheEntry<T> {
 }
 
 const CACHE_TTL_MS = 120_000; // 2 minutes
+const FAST_APPS_CACHE_TTL_MS = 30_000;
+const APPS_STATUS_TIMEOUT_MS = 10_000;
+const APPS_DOMAIN_TIMEOUT_MS = 5_000;
+const APP_TYPE_COMMAND_TIMEOUT_MS = 1_500;
+const APP_TYPE_ENRICHMENT_BUDGET_MS = 4_000;
+
+const APPS_LIST_CACHE_KEY = "apps:list";
+const APPS_INDEX_CACHE_KEY = "apps:index";
+const APPS_NAMES_CACHE_KEY = "apps:names";
 
 // ── Client ─────────────────────────────────────────────────────────────────
 
 export class DokkuClient {
   private cache = new Map<string, CacheEntry<unknown>>();
   private pool: SshPool;
+  private appsListRefresh: Promise<AppInfo[]> | null = null;
 
   constructor(private cfg: SshConfig) {
     this.pool = new SshPool(cfg);
   }
 
-  private exec(args: string[]): Promise<string> {
-    return this.pool.exec(args);
+  private exec(args: string[], timeoutMs?: number): Promise<string> {
+    return this.pool.exec(args, timeoutMs);
   }
 
   /** Pre-warm the SSH connection and apps cache. */
   async warmup(): Promise<void> {
     try {
-      await this.appsList();
-      console.log("SSH connection warmed up, apps cache populated");
+      await this.appsListFast();
+      this.appsList().catch((err) => {
+        console.error("Warmup app status refresh failed:", err instanceof Error ? err.message : err);
+      });
+      console.log("SSH connection warmed up, app index cache populated");
     } catch (err) {
       console.error("Warmup failed:", err instanceof Error ? err.message : err);
     }
@@ -91,12 +104,16 @@ export class DokkuClient {
   private getCached<T>(key: string): T | undefined {
     const entry = this.cache.get(key);
     if (entry && Date.now() < entry.expires) return entry.data as T;
-    this.cache.delete(key);
     return undefined;
   }
 
-  private setCache<T>(key: string, data: T): T {
-    this.cache.set(key, { data, expires: Date.now() + CACHE_TTL_MS });
+  private getStaleCached<T>(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    return entry?.data as T | undefined;
+  }
+
+  private setCache<T>(key: string, data: T, ttlMs = CACHE_TTL_MS): T {
+    this.cache.set(key, { data, expires: Date.now() + ttlMs });
     return data;
   }
 
@@ -112,12 +129,68 @@ export class DokkuClient {
 
   // ── Apps ────────────────────────────────────────────────────────────────
 
-  async appsList(): Promise<AppInfo[]> {
-    const cached = this.getCached<AppInfo[]>("apps:list");
-    if (cached) return cached;
+  private appFromName(name: string, known?: AppInfo): AppInfo {
+    return {
+      name,
+      status: known?.status ?? "unknown",
+      deployed: known?.deployed ?? false,
+      processCount: known?.processCount ?? 0,
+      processTypes: known ? [...known.processTypes] : [],
+      processTypeCounts: known ? { ...known.processTypeCounts } : {},
+      domains: known ? [...known.domains] : [],
+      appType: known?.appType ?? "",
+    };
+  }
 
-    // Single SSH call to get all app statuses at once
-    const out = await this.exec(["ps:report"]);
+  private appsFallback(): AppInfo[] | undefined {
+    return this.getStaleCached<AppInfo[]>(APPS_LIST_CACHE_KEY)
+      ?? this.getStaleCached<AppInfo[]>(APPS_INDEX_CACHE_KEY);
+  }
+
+  private mergeAppsFromNames(names: string[], knownApps?: AppInfo[]): AppInfo[] {
+    const knownByName = new Map((knownApps ?? []).map((app) => [app.name, app]));
+    return names.map((name) => this.appFromName(name, knownByName.get(name)));
+  }
+
+  private appFromPsBlock(name: string, block: string, known?: AppInfo): AppInfo {
+    let status = "unknown";
+    let deployed = false;
+
+    if (/Running:\s+true/i.test(block)) {
+      status = "running";
+      deployed = true;
+    } else if (/Running:\s+false/i.test(block) && /Deployed:\s+true/i.test(block)) {
+      status = "stopped";
+      deployed = true;
+    } else if (/Deployed:\s+true/i.test(block)) {
+      status = "deployed";
+      deployed = true;
+    } else {
+      status = "not deployed";
+    }
+
+    const processTypeCounts: Record<string, number> = {};
+    let processCount = 0;
+    const statusMatches = block.matchAll(/Status\s+(\w+)[.\s]+\d+/g);
+    for (const m of statusMatches) {
+      processTypeCounts[m[1]] = (processTypeCounts[m[1]] ?? 0) + 1;
+      processCount++;
+    }
+
+    return {
+      name,
+      status,
+      deployed,
+      processCount,
+      processTypes: Object.keys(processTypeCounts),
+      processTypeCounts,
+      domains: known ? [...known.domains] : [],
+      appType: known?.appType ?? "",
+    };
+  }
+
+  private parseAppsReport(out: string, knownApps?: AppInfo[]): AppInfo[] {
+    const knownByName = new Map((knownApps ?? []).map((app) => [app.name, app]));
     const apps: AppInfo[] = [];
     const blocks = out.split(/(?======>\s)/);
 
@@ -125,67 +198,120 @@ export class DokkuClient {
       const headerMatch = block.match(/=====> (\S+) ps information/);
       if (!headerMatch) continue;
       const name = headerMatch[1];
-      let status = "unknown";
-      let deployed = false;
-
-      if (/Running:\s+true/i.test(block)) {
-        status = "running";
-        deployed = true;
-      } else if (/Running:\s+false/i.test(block) && /Deployed:\s+true/i.test(block)) {
-        status = "stopped";
-        deployed = true;
-      } else if (/Deployed:\s+true/i.test(block)) {
-        status = "deployed";
-        deployed = true;
-      } else {
-        status = "not deployed";
-      }
-
-      // Extract process info from status lines like "Status web 1" or "Status web.1"
-      const processTypeCounts: Record<string, number> = {};
-      let processCount = 0;
-      const statusMatches = block.matchAll(/Status\s+(\w+)[.\s]+\d+/g);
-      for (const m of statusMatches) {
-        processTypeCounts[m[1]] = (processTypeCounts[m[1]] ?? 0) + 1;
-        processCount++;
-      }
-
-      apps.push({ name, status, deployed, processCount, processTypes: Object.keys(processTypeCounts), processTypeCounts, domains: [], appType: "" });
+      apps.push(this.appFromPsBlock(name, block, knownByName.get(name)));
     }
 
-    // Fetch all domains in a single SSH call to avoid channel exhaustion
+    return apps;
+  }
+
+  async appsListFast(): Promise<AppInfo[]> {
+    const cachedFull = this.getCached<AppInfo[]>(APPS_LIST_CACHE_KEY);
+    if (cachedFull) return cachedFull;
+
+    const cachedIndex = this.getCached<AppInfo[]>(APPS_INDEX_CACHE_KEY);
+    if (cachedIndex) return cachedIndex;
+
+    return this.appsListFromNames();
+  }
+
+  private async appsListFromNames(): Promise<AppInfo[]> {
+    const fallback = this.appsFallback();
     try {
-      const domainsMap = await this.domainsReportAll();
+      const names = await this.appsListNames();
+      return this.setCache(
+        APPS_INDEX_CACHE_KEY,
+        this.mergeAppsFromNames(names, fallback),
+        FAST_APPS_CACHE_TTL_MS,
+      );
+    } catch (err) {
+      if (fallback) return fallback;
+      throw err;
+    }
+  }
+
+  async appsList(): Promise<AppInfo[]> {
+    const cached = this.getCached<AppInfo[]>(APPS_LIST_CACHE_KEY);
+    if (cached) return cached;
+
+    if (this.appsListRefresh) return this.appsListRefresh;
+
+    this.appsListRefresh = this.refreshAppsList().finally(() => {
+      this.appsListRefresh = null;
+    });
+    return this.appsListRefresh;
+  }
+
+  private async refreshAppsList(): Promise<AppInfo[]> {
+    const fallback = this.appsFallback();
+    const knownByName = new Map((fallback ?? []).map((app) => [app.name, app]));
+    let apps: AppInfo[];
+
+    try {
+      // Single SSH call to get all app statuses at once. Keep this bounded so
+      // a slow Dokku status report does not block the dashboard page load.
+      const out = await this.exec(["ps:report"], Math.min(this.cfg.timeoutMs, APPS_STATUS_TIMEOUT_MS));
+      apps = this.parseAppsReport(out, fallback);
+    } catch (err) {
+      try {
+        return await this.appsListFromNames();
+      } catch {
+        if (fallback) return fallback;
+        throw err;
+      }
+    }
+
+    // Fetch all domains in a single SSH call to avoid channel exhaustion.
+    try {
+      const domainsMap = await this.domainsReportAll(Math.min(this.cfg.timeoutMs, APPS_DOMAIN_TIMEOUT_MS));
       for (const app of apps) {
         app.domains = domainsMap.get(app.name) ?? [];
       }
     } catch {
-      // leave domains empty if batch call fails
+      // Keep stale domains from the previous cache if batch call fails.
     }
 
-    // Fetch DOKKU_APP_TYPE for each app sequentially (avoids channel exhaustion)
+    // Fetch DOKKU_APP_TYPE sequentially with a small total budget. Grouping by
+    // type is useful, but it must not dominate the apps page response time.
+    const enrichDeadline = performance.now() + APP_TYPE_ENRICHMENT_BUDGET_MS;
     for (const app of apps) {
+      const cacheKey = `apps:type:${app.name}`;
+      const cachedType = this.getCached<string>(cacheKey);
+      if (cachedType !== undefined) {
+        app.appType = cachedType;
+        continue;
+      }
+
+      const staleType = knownByName.get(app.name)?.appType;
+      if (staleType) app.appType = staleType;
+
+      const remaining = enrichDeadline - performance.now();
+      if (remaining <= 0) continue;
+
       try {
-        const val = (await this.exec(["config:get", app.name, "DOKKU_APP_TYPE"])).trim();
-        if (val) {
-          app.appType = val;
-        }
+        const timeoutMs = Math.max(1, Math.min(this.cfg.timeoutMs, APP_TYPE_COMMAND_TIMEOUT_MS, remaining));
+        const val = (await this.exec(["config:get", app.name, "DOKKU_APP_TYPE"], timeoutMs)).trim();
+        app.appType = val;
+        this.setCache(cacheKey, val);
       } catch {
         // keep empty app type
       }
     }
 
-    return this.setCache("apps:list", apps);
+    return this.setCache(APPS_LIST_CACHE_KEY, apps);
   }
 
   async appsListNames(): Promise<string[]> {
+    const cached = this.getCached<string[]>(APPS_NAMES_CACHE_KEY);
+    if (cached) return cached;
+
     const out = await this.exec(["apps:list"]);
-    return out
+    const names = out
       .trim()
       .split("\n")
       .slice(1)
       .map((l) => l.trim())
       .filter(Boolean);
+    return this.setCache(APPS_NAMES_CACHE_KEY, names, FAST_APPS_CACHE_TTL_MS);
   }
 
   async appsCreate(name: string): Promise<string> {
@@ -202,6 +328,16 @@ export class DokkuClient {
 
   async appsReport(name: string): Promise<string> {
     return this.exec(["ps:report", name]);
+  }
+
+  async appInfo(name: string, options: { domains?: string[]; appType?: string } = {}): Promise<AppInfo> {
+    const fallback = this.appsFallback()?.find((app) => app.name === name);
+    const out = await this.appsReport(name);
+    const app = this.parseAppsReport(out, fallback ? [fallback] : [])[0] ?? this.appFromName(name, fallback);
+
+    app.domains = options.domains ?? fallback?.domains ?? [];
+    app.appType = options.appType ?? fallback?.appType ?? "";
+    return app;
   }
 
   // ── Process management ─────────────────────────────────────────────────
@@ -241,7 +377,9 @@ export class DokkuClient {
     for (const [type, count] of Object.entries(scaling)) {
       args.push(`${type}=${count}`);
     }
-    return this.exec(args);
+    const out = await this.exec(args);
+    this.invalidateCache("apps:");
+    return out;
   }
 
   // ── Logs ───────────────────────────────────────────────────────────────
@@ -287,7 +425,9 @@ export class DokkuClient {
     for (const [k, v] of Object.entries(vars)) {
       args.push(`${k}=${v}`);
     }
-    return this.exec(args);
+    const out = await this.exec(args);
+    if (Object.prototype.hasOwnProperty.call(vars, "DOKKU_APP_TYPE")) this.invalidateCache("apps:");
+    return out;
   }
 
   async configUnset(
@@ -298,14 +438,16 @@ export class DokkuClient {
     const args = ["config:unset"];
     if (noRestart) args.push("--no-restart");
     args.push(name, ...keys);
-    return this.exec(args);
+    const out = await this.exec(args);
+    if (keys.includes("DOKKU_APP_TYPE")) this.invalidateCache("apps:");
+    return out;
   }
 
   // ── Domains ────────────────────────────────────────────────────────────
 
   /** Fetch domains for all apps in a single SSH call. */
-  async domainsReportAll(): Promise<Map<string, string[]>> {
-    const out = await this.exec(["domains:report"]);
+  async domainsReportAll(timeoutMs = this.cfg.timeoutMs): Promise<Map<string, string[]>> {
+    const out = await this.exec(["domains:report"], timeoutMs);
     const result = new Map<string, string[]>();
     let currentApp: string | null = null;
     for (const line of out.trim().split("\n")) {
@@ -343,11 +485,15 @@ export class DokkuClient {
   }
 
   async domainsAdd(name: string, domain: string): Promise<string> {
-    return this.exec(["domains:add", name, domain]);
+    const out = await this.exec(["domains:add", name, domain]);
+    this.invalidateCache("apps:");
+    return out;
   }
 
   async domainsRemove(name: string, domain: string): Promise<string> {
-    return this.exec(["domains:remove", name, domain]);
+    const out = await this.exec(["domains:remove", name, domain]);
+    this.invalidateCache("apps:");
+    return out;
   }
 
   // ── Let's Encrypt ──────────────────────────────────────────────────────

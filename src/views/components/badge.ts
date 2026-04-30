@@ -1,29 +1,30 @@
 import { html } from "hono/html";
 
-const statusStyles: Record<string, string> = {
-  running: "bg-green-100 text-green-700",
-  stopped: "bg-red-100 text-red-700",
-  deployed: "bg-blue-100 text-blue-700",
-  "not deployed": "bg-gray-100 text-gray-500",
-  unknown: "bg-gray-100 text-gray-500",
+const statusMap: Record<string, { label: string; cls: string; dot: boolean }> = {
+  running:        { label: "running",      cls: "dk-pill dk-pill-ok",    dot: true  },
+  stopped:        { label: "stopped",      cls: "dk-pill dk-pill-warn",  dot: false },
+  deployed:       { label: "deployed",     cls: "dk-pill dk-pill-accent", dot: false },
+  "not deployed": { label: "not deployed", cls: "dk-pill dk-pill-muted", dot: false },
+  failed:         { label: "failed",       cls: "dk-pill dk-pill-bad",   dot: false },
+  unknown:        { label: "unknown",      cls: "dk-pill dk-pill-muted", dot: false },
 };
 
 export function statusBadge(status: string) {
-  const cls = statusStyles[status] ?? statusStyles.unknown;
-  return html`<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${status}</span>`;
+  const m = statusMap[status] ?? statusMap.unknown;
+  return html`<span class="${m.cls}">${m.dot ? html`<span class="dk-pill-dot"></span>` : ""}${m.label}</span>`;
 }
 
 export function processBadge(type: string, count: number) {
-  return html`<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-600">${type}<span class="text-blue-400">&times;${String(count)}</span></span>`;
+  return html`<span class="dk-pill dk-pill-accent">${type} ×${String(count)}</span>`;
 }
 
 const typeStyles: Record<string, string> = {
-  api:     "bg-violet-50 text-violet-600",
-  bot:     "bg-orange-50 text-orange-600",
-  indexer: "bg-teal-50 text-teal-600",
+  api:     "dk-pill dk-pill-accent",
+  bot:     "dk-pill dk-pill-warn",
+  indexer: "dk-pill dk-pill-ok",
 };
 
 export function typeBadge(type: string) {
-  const cls = typeStyles[type] ?? "bg-gray-100 text-gray-500";
-  return html`<span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${type}</span>`;
+  const cls = typeStyles[type] ?? "dk-pill dk-pill-muted";
+  return html`<span class="${cls}">${type}</span>`;
 }

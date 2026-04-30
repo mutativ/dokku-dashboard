@@ -1,6 +1,6 @@
 import { html } from "hono/html";
 import { pageHeader } from "../components/nav.js";
-import { table } from "../components/table.js";
+import { readonlyChip } from "../components/action-btn.js";
 
 export function databasesListPage(
   databases: Array<{ name: string; links: string[]; size: string }>,
@@ -8,152 +8,149 @@ export function databasesListPage(
   enableDestructiveActions = true,
   totalSize?: string,
 ) {
-  const header = pageHeader(
-    "Databases",
-    html`
-      <div class="flex items-center gap-3">
-        ${totalSize ? html`<span class="text-xs font-medium bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full">Total: ${totalSize}</span>` : html``}
-        ${enableDestructiveActions
-          ? html`
-              <button
-                onclick="document.getElementById('create-db-modal').classList.remove('hidden')"
-                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">
-                Create Database
-              </button>
-            `
-          : html`<span class="text-xs font-medium bg-gray-100 text-gray-500 px-2.5 py-1 rounded-full">View only mode</span>`}
-      </div>
-    `,
-  );
+  const sub = html`${databases.length} service${databases.length === 1 ? "" : "s"} provisioned${totalSize ? html` · ${totalSize} total` : html``}`;
 
-  const rows = databases.map(
-    (db) => html`
-      <tr class="hover:bg-gray-50 transition-colors">
-        <td class="px-4 py-3">
-          <a href="/databases/${db.name}" class="text-blue-600 hover:text-blue-800 font-medium">${db.name}</a>
-        </td>
-        <td class="px-4 py-3 text-gray-500 font-mono text-xs">${db.size}</td>
-        <td class="px-4 py-3">
-          ${db.links.length > 0
-            ? db.links.map(
-                (link) => html`<a href="/apps/${link}" class="inline-block bg-gray-100 text-gray-600 hover:text-blue-600 text-xs px-2 py-0.5 rounded mr-1 max-w-[200px] truncate align-bottom" title="${link}">${link}</a>`,
-              )
-            : html`<span class="text-gray-400 text-xs">none</span>`}
-        </td>
-        ${enableDestructiveActions
-          ? html`<td class="px-4 py-3 text-right">
-              <div class="flex gap-2 justify-end">
-                <button onclick="openLinkModal('${db.name}')"
-                  class="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2.5 py-1 rounded transition-colors">Link</button>
-                <button onclick="document.getElementById('destroy-db-${db.name}').classList.remove('hidden')"
-                  class="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2.5 py-1 rounded transition-colors">Destroy</button>
-              </div>
-            </td>`
-          : html``}
-      </tr>
-    `,
-  );
+  const headerActions = enableDestructiveActions
+    ? html`
+        <button
+          onclick="document.getElementById('create-db-modal').classList.remove('hidden')"
+          class="dk-btn dk-btn-primary">
+          Create Database
+        </button>
+      `
+    : html`<span class="dk-pill dk-pill-muted">View only mode</span>`;
+
+  const banner = enableDestructiveActions
+    ? html``
+    : html`
+        <div class="dk-ro-banner">
+          <span class="ic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="11" width="14" height="9" rx="2" />
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+            </svg>
+          </span>
+          <span><span class="dk-ro-banner-strong">Read‑only session.</span> Link / Destroy actions are disabled in this view.</span>
+        </div>
+      `;
+
+  const rowActions = (dbName: string) =>
+    enableDestructiveActions
+      ? html`
+          <div class="dk-action-row">
+            <button onclick="openLinkModal('${dbName}')" class="dk-actbtn dk-actbtn-accent">Link</button>
+            <button onclick="document.getElementById('destroy-db-${dbName}').classList.remove('hidden')" class="dk-actbtn dk-actbtn-bad">Destroy</button>
+          </div>
+        `
+      : html`
+          <div class="dk-action-row">
+            ${readonlyChip("Link",    "accent")}
+            ${readonlyChip("Destroy", "bad")}
+          </div>
+        `;
 
   return html`
-    ${header}
+    ${pageHeader("Databases", headerActions, sub)}
+    ${banner}
 
     ${databases.length === 0
-      ? html`<div class="text-center py-12 text-gray-400">No databases found. Create one to get started.</div>`
-      : table(
-          enableDestructiveActions
-            ? [
-                { header: "Name" },
-                { header: "Size" },
-                { header: "Linked Apps" },
-                { header: "Actions", class: "text-right" },
-              ]
-            : [
-                { header: "Name" },
-                { header: "Size" },
-                { header: "Linked Apps" },
-              ],
-          rows,
-        )}
+      ? html`<div class="dk-card"><div class="dk-empty">No databases found. Create one to get started.</div></div>`
+      : html`
+          <div class="dk-card" style="padding:0;overflow:hidden">
+            <table class="dk-tbl">
+              <thead>
+                <tr>
+                  <th style="width:30%">Name</th>
+                  <th>Linked apps</th>
+                  <th style="width:14%">Size</th>
+                  <th class="al-r" style="width:18%">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${databases.map((db) => html`
+                  <tr>
+                    <td>
+                      <a class="dk-app-name" href="/databases/${db.name}">${db.name}</a>
+                      <div class="dk-app-domains">postgres</div>
+                    </td>
+                    <td>
+                      ${db.links.length > 0
+                        ? html`
+                            <div class="dk-taglist">
+                              ${db.links.map((l) => html`<a href="/apps/${l}" class="dk-tag" title="${l}">${l}</a>`)}
+                            </div>
+                          `
+                        : html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">—</span>`}
+                    </td>
+                    <td style="font-family:var(--font-mono);font-size:12px;color:var(--ink-2)">${db.size}</td>
+                    <td style="text-align:right">${rowActions(db.name)}</td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+        `}
 
     ${enableDestructiveActions
       ? html`
-          <!-- Create Database Modal -->
           <div id="create-db-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div class="bg-white border border-gray-200 rounded-xl w-full max-w-md p-6 shadow-xl">
-              <h3 class="text-lg font-bold text-gray-900 mb-4">Create Database</h3>
+            <div class="dk-modal w-full max-w-md p-6" style="box-shadow:0 20px 50px oklch(0 0 0 / 0.18)">
+              <h3 style="font-weight:600;font-size:16px;margin-bottom:14px">Create Database</h3>
               <form method="POST" action="/databases/create">
-                <label class="block mb-2 text-sm font-medium text-gray-600">Database Name</label>
+                <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--ink-3)">Database Name</label>
                 <input type="text" name="name" required pattern="[a-z][a-z0-9-]*" minlength="2" maxlength="64"
-                  class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg mb-1 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  style="width:100%;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:13px;outline:none;margin-bottom:6px"
                   placeholder="my-database">
-                <p class="text-xs text-gray-400 mb-4">Lowercase letters, numbers, hyphens.</p>
-                <div class="flex gap-3 justify-end">
-                  <button type="button" onclick="document.getElementById('create-db-modal').classList.add('hidden')"
-                    class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
-                  <button type="submit"
-                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">Create</button>
+                <p style="font-size:11px;color:var(--ink-4);margin-bottom:14px">Lowercase letters, numbers, hyphens.</p>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                  <button type="button" onclick="document.getElementById('create-db-modal').classList.add('hidden')" class="dk-btn dk-btn-ghost">Cancel</button>
+                  <button type="submit" class="dk-btn dk-btn-primary">Create</button>
                 </div>
               </form>
             </div>
           </div>
-        `
-      : html``}
 
-    ${enableDestructiveActions
-      ? html`
-          <!-- Link Modal -->
           <div id="link-modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div class="bg-white border border-gray-200 rounded-xl w-full max-w-md p-6 shadow-xl">
-              <h3 class="text-lg font-bold text-gray-900 mb-4">Link Database to App</h3>
+            <div class="dk-modal w-full max-w-md p-6" style="box-shadow:0 20px 50px oklch(0 0 0 / 0.18)">
+              <h3 style="font-weight:600;font-size:16px;margin-bottom:14px">Link Database to App</h3>
               <form method="POST" id="link-form">
-                <label class="block mb-2 text-sm font-medium text-gray-600">App</label>
+                <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--ink-3)">App</label>
                 <select name="app" required
-                  class="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg mb-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  style="width:100%;padding:8px 10px;border:1px solid var(--line-2);border-radius:var(--radius-sm);font-size:13px;outline:none;margin-bottom:14px">
                   ${apps.map((a) => html`<option value="${a}">${a}</option>`)}
                 </select>
-                <div class="flex gap-3 justify-end">
-                  <button type="button" onclick="document.getElementById('link-modal').classList.add('hidden')"
-                    class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
-                  <button type="submit"
-                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors">Link</button>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                  <button type="button" onclick="document.getElementById('link-modal').classList.add('hidden')" class="dk-btn dk-btn-ghost">Cancel</button>
+                  <button type="submit" class="dk-btn dk-btn-primary">Link</button>
                 </div>
               </form>
             </div>
           </div>
-        `
-      : html``}
 
-    <!-- Destroy modals for each DB -->
-    ${enableDestructiveActions
-      ? databases.map(
-          (db) => html`
+          ${databases.map((db) => html`
             <div id="destroy-db-${db.name}" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-              <div class="bg-white border border-gray-200 rounded-xl w-full max-w-md p-6 shadow-xl">
-                <h3 class="text-lg font-bold text-red-600 mb-2">Destroy Database</h3>
-                <p class="text-sm text-gray-600 mb-4">
-                  Permanently destroy <strong class="text-gray-900">${db.name}</strong> and all its data?
+              <div class="dk-modal w-full max-w-md p-6" style="box-shadow:0 20px 50px oklch(0 0 0 / 0.18)">
+                <h3 style="font-weight:600;font-size:16px;color:var(--bad);margin-bottom:8px">Destroy Database</h3>
+                <p style="font-size:13px;color:var(--ink-2);margin-bottom:14px">
+                  Permanently destroy <strong style="color:var(--ink)">${db.name}</strong> and all its data?
                 </p>
-                <div class="flex gap-3 justify-end">
-                  <button type="button" onclick="document.getElementById('destroy-db-${db.name}').classList.add('hidden')"
-                    class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">Cancel</button>
+                <div style="display:flex;gap:8px;justify-content:flex-end">
+                  <button type="button" onclick="document.getElementById('destroy-db-${db.name}').classList.add('hidden')" class="dk-btn dk-btn-ghost">Cancel</button>
                   <form method="POST" action="/databases/${db.name}/destroy">
-                    <button type="submit"
-                      class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Destroy</button>
+                    <button type="submit" class="dk-actbtn dk-actbtn-bad" style="padding:7px 13px">Destroy</button>
                   </form>
                 </div>
               </div>
             </div>
-          `,
-        )
-      : html``}
+          `)}
 
-    ${enableDestructiveActions
-      ? html`<script>
-          function openLinkModal(dbName) {
-            document.getElementById('link-form').action = '/databases/' + dbName + '/link';
-            document.getElementById('link-modal').classList.remove('hidden');
-          }
-        </script>`
+          <script>
+            function openLinkModal(dbName) {
+              document.getElementById('link-form').action = '/databases/' + dbName + '/link';
+              document.getElementById('link-modal').classList.remove('hidden');
+            }
+          </script>
+        `
       : html``}
   `;
 }
