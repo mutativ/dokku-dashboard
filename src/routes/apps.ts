@@ -25,6 +25,12 @@ function friendlyAppsError(err: unknown) {
   return "Unable to refresh the app list right now.";
 }
 
+function loadingPollAttempt(value: string | undefined) {
+  const attempt = Number.parseInt(value ?? "0", 10);
+  if (!Number.isFinite(attempt) || attempt < 0) return 0;
+  return attempt;
+}
+
 function appInfoFromMeta(name: string, meta: AppMeta, domains: string[] = []): AppInfo {
   const isRunning = meta.psReport.Running?.toLowerCase() === "true";
   const isDeployed = meta.psReport.Deployed?.toLowerCase() === "true";
@@ -58,7 +64,9 @@ export function appsRoutes() {
     try {
       const apps = await dokku.appsListFast();
       const canMutate = mutationsEnabled(c);
-      if (partial === "rows") return c.html(appsListRows(apps, canMutate, true));
+      if (partial === "rows") {
+        return c.html(appsListRows(apps, canMutate, true, loadingPollAttempt(c.req.query("attempt"))));
+      }
       return c.html(layout("Apps", appsListPage(apps, canMutate), "/apps", c.get("userEmail")));
     } catch (err) {
       const message = friendlyAppsError(err);

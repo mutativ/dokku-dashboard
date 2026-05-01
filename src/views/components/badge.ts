@@ -3,6 +3,7 @@ import type { AppStatus } from "../../lib/dokku.js";
 
 const statusMap: Record<AppStatus, { label: string; cls: string; dot: boolean; spinner?: boolean }> = {
   loading:        { label: "checking",     cls: "dk-pill dk-pill-muted dk-pill-loading", dot: false, spinner: true },
+  stale:          { label: "stale",        cls: "dk-pill dk-pill-muted", dot: false },
   running:        { label: "running",      cls: "dk-pill dk-pill-ok",    dot: true  },
   stopped:        { label: "stopped",      cls: "dk-pill dk-pill-warn",  dot: false },
   deployed:       { label: "deployed",     cls: "dk-pill dk-pill-accent", dot: false },

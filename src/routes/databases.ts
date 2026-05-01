@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppBindings } from "../server.js";
 import { layout } from "../views/layout.js";
-import { databasesListPage, databasesListRows } from "../views/pages/databases-list.js";
+import { databasesListErrorRows, databasesListPage, databasesListRows } from "../views/pages/databases-list.js";
 import { databaseDetailPage } from "../views/pages/database-detail.js";
 import { alert } from "../views/components/alert.js";
 import { nameSchema } from "../lib/validation.js";
@@ -12,6 +12,12 @@ function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   const val = bytes / Math.pow(1024, i);
   return `${val < 10 ? val.toFixed(1) : Math.round(val)} ${units[i]}`;
+}
+
+function loadingPollAttempt(value: string | undefined) {
+  const attempt = Number.parseInt(value ?? "0", 10);
+  if (!Number.isFinite(attempt) || attempt < 0) return 0;
+  return attempt;
 }
 
 export function databasesRoutes() {
@@ -25,16 +31,19 @@ export function databasesRoutes() {
     try {
       const [databases, apps] = await Promise.all([
         dokku.databasesListFast(),
-        dokku.appsListNames(),
+        partial === "rows" ? Promise.resolve([]) : dokku.appsListNames(),
       ]);
       const totalBytes = databases.reduce((sum, db) => sum + db.sizeBytes, 0);
       const totalSize = databases.some((db) => db.size === "checking") ? undefined : formatBytes(totalBytes);
       const canMutate = c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
 
-      if (partial === "rows") return c.html(databasesListRows(databases, canMutate, true));
+      if (partial === "rows") {
+        return c.html(databasesListRows(databases, canMutate, true, loadingPollAttempt(c.req.query("attempt"))));
+      }
       return c.html(layout("Databases", databasesListPage(databases, apps, canMutate, totalSize), "/databases", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to list databases";
+      if (partial === "rows") return c.html(databasesListErrorRows(message));
       return c.html(layout("Databases", alert("error", message), "/databases", c.get("userEmail")));
     }
   });

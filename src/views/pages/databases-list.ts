@@ -2,6 +2,9 @@ import { html } from "hono/html";
 import { pageHeader } from "../components/nav.js";
 import { readonlyChip } from "../components/action-btn.js";
 
+const LOADING_POLL_DELAY_SECONDS = 5;
+const MAX_LOADING_POLL_ATTEMPTS = 6;
+
 export function databasesListPage(
   databases: Array<{ name: string; links: string[]; size: string }>,
   apps: string[],
@@ -51,7 +54,7 @@ export function databasesListPage(
                   <th class="al-r" style="width:18%">Actions</th>
                 </tr>
               </thead>
-              <tbody id="database-rows" hx-get="/databases?partial=rows" hx-trigger="load delay:250ms, refreshDatabaseList from:body" hx-swap="innerHTML">
+              <tbody id="database-rows" hx-get="/databases?partial=rows&attempt=0" hx-trigger="load delay:250ms, refreshDatabaseList from:body" hx-swap="innerHTML">
                 ${databasesListRows(databases, enableDestructiveActions)}
               </tbody>
             </table>
@@ -146,7 +149,11 @@ export function databasesListRows(
   databases: Array<{ name: string; links: string[]; size: string }>,
   enableDestructiveActions = true,
   pollWhenLoading = false,
+  loadingPollAttempt = 0,
 ) {
+  const shouldPoll = pollWhenLoading && hasLoadingDatabases(databases) && loadingPollAttempt < MAX_LOADING_POLL_ATTEMPTS;
+  const nextPollAttempt = loadingPollAttempt + 1;
+
   return html`
     ${databases.map((db) => html`
       <tr class="${db.size === "checking" ? "dk-row-loading" : ""}">
@@ -169,16 +176,26 @@ export function databasesListRows(
         <td style="text-align:right">${databaseRowActions(db.name, enableDestructiveActions)}</td>
       </tr>
     `)}
-    ${pollWhenLoading && hasLoadingDatabases(databases)
+    ${shouldPoll
       ? html`
           <tr class="dk-refresh-row"
-              hx-get="/databases?partial=rows"
-              hx-trigger="load delay:2s"
+              hx-get="/databases?partial=rows&attempt=${nextPollAttempt}"
+              hx-trigger="load delay:${LOADING_POLL_DELAY_SECONDS}s"
               hx-target="#database-rows"
               hx-swap="innerHTML">
             <td colspan="4"></td>
           </tr>
         `
       : html``}
+  `;
+}
+
+export function databasesListErrorRows(message: string) {
+  return html`
+    <tr>
+      <td colspan="4">
+        <div class="dk-inline-alert">${message}</div>
+      </td>
+    </tr>
   `;
 }

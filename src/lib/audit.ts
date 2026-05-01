@@ -1,6 +1,7 @@
 /** Structured audit logger for SSH command execution. */
 
 const SENSITIVE_PATTERNS = /KEY|SECRET|HASH|PASSWORD|TOKEN|PRIVATE|CREDENTIAL|DSN/i;
+const SLOW_COMMAND_MS = 1_000;
 
 /** Redact values in config:set arguments like KEY=value → KEY=***. */
 function redactArgs(args: string[]): string[] {
@@ -31,5 +32,14 @@ export function auditLog(
     ms: Math.round(durationMs),
   };
   if (error) entry.error = error.slice(0, 200);
-  console.log(JSON.stringify(entry));
+  if (durationMs >= SLOW_COMMAND_MS) entry.slow = true;
+
+  const line = JSON.stringify(entry);
+  if (status === "error") {
+    console.error(line);
+  } else if (durationMs >= SLOW_COMMAND_MS) {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
 }

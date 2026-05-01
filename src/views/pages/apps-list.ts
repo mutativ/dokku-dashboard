@@ -4,6 +4,9 @@ import { pageHeader } from "../components/nav.js";
 import { statusBadge } from "../components/badge.js";
 import { actionBtn, readonlyChip } from "../components/action-btn.js";
 
+const LOADING_POLL_DELAY_SECONDS = 5;
+const MAX_LOADING_POLL_ATTEMPTS = 9;
+
 function groupAppsByType(apps: AppInfo[]): Array<{ type: string; apps: AppInfo[] }> {
   const map = new Map<string, AppInfo[]>();
   for (const app of apps) {
@@ -20,6 +23,9 @@ function rowActions(app: AppInfo, enableDestructive: boolean) {
     return html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">checking</span>`;
   }
   if (app.status === "not deployed") {
+    return html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">—</span>`;
+  }
+  if (app.status === "stale" || app.status === "unknown") {
     return html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">—</span>`;
   }
   if (!enableDestructive) {
@@ -70,8 +76,16 @@ function hasLoadingApps(apps: AppInfo[]) {
   return apps.some((app) => app.status === "loading");
 }
 
-export function appsListRows(apps: AppInfo[], enableDestructiveActions = true, pollWhenLoading = false) {
+export function appsListRows(
+  apps: AppInfo[],
+  enableDestructiveActions = true,
+  pollWhenLoading = false,
+  loadingPollAttempt = 0,
+) {
   const groups = groupAppsByType(apps);
+  const shouldPoll = pollWhenLoading && hasLoadingApps(apps) && loadingPollAttempt < MAX_LOADING_POLL_ATTEMPTS;
+  const nextPollAttempt = loadingPollAttempt + 1;
+
   return html`
     ${groups.map(
     (group) => html`
@@ -84,11 +98,11 @@ export function appsListRows(apps: AppInfo[], enableDestructiveActions = true, p
       ${group.apps.map((app) => appRow(app, enableDestructiveActions))}
     `,
   )}
-    ${pollWhenLoading && hasLoadingApps(apps)
+    ${shouldPoll
       ? html`
           <tr class="dk-refresh-row"
-              hx-get="/apps?partial=rows"
-              hx-trigger="load delay:2s"
+              hx-get="/apps?partial=rows&attempt=${nextPollAttempt}"
+              hx-trigger="load delay:${LOADING_POLL_DELAY_SECONDS}s"
               hx-target="#app-rows"
               hx-swap="innerHTML">
             <td colspan="3"></td>
@@ -151,7 +165,7 @@ export function appsListPage(apps: AppInfo[], enableDestructiveActions = true) {
                   <th class="al-r">Actions</th>
                 </tr>
               </thead>
-              <tbody id="app-rows" hx-get="/apps?partial=rows" hx-trigger="load delay:250ms, refreshAppList from:body" hx-swap="innerHTML">
+              <tbody id="app-rows" hx-get="/apps?partial=rows&attempt=0" hx-trigger="load delay:250ms, refreshAppList from:body" hx-swap="innerHTML">
                 ${appsListRows(apps, enableDestructiveActions)}
               </tbody>
             </table>

@@ -3,7 +3,7 @@ import { SshPool } from "./ssh.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type AppStatus = "loading" | "running" | "stopped" | "deployed" | "not deployed" | "failed" | "unknown";
+export type AppStatus = "loading" | "stale" | "running" | "stopped" | "deployed" | "not deployed" | "failed" | "unknown";
 
 export interface AppInfo {
   name: string;
@@ -69,18 +69,46 @@ interface CacheEntry<T> {
   expires: number;
 }
 
+async function mapConcurrent<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  let nextIndex = 0;
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+
+  return results;
+}
+
 const CACHE_TTL_MS = 120_000; // 2 minutes
 const FAST_APPS_CACHE_TTL_MS = 30_000;
+const FAST_DATABASES_CACHE_TTL_MS = 30_000;
+const APPS_DOMAINS_CACHE_TTL_MS = 5 * 60_000;
 const APP_TYPE_CACHE_TTL_MS = 60 * 60_000;
 const BACKGROUND_REFRESH_MS = 60_000;
-const APPS_STATUS_TIMEOUT_MS = 10_000;
-const APPS_DOMAIN_TIMEOUT_MS = 5_000;
+const APPS_STATUS_TIMEOUT_MS = 45_000;
+const APPS_DOMAIN_TIMEOUT_MS = 15_000;
+const APPS_STATUS_TIMEOUT_COOLDOWN_MS = 60_000;
+const APP_STATUS_FALLBACK_TIMEOUT_MS = 5_000;
+const APP_STATUS_FALLBACK_CONCURRENCY = 4;
 const APP_TYPE_COMMAND_TIMEOUT_MS = 1_500;
+const APP_TYPE_REFRESH_CONCURRENCY = 3;
+const DATABASE_REFRESH_CONCURRENCY = 3;
 
 const APPS_LIST_CACHE_KEY = "apps:list";
 const APPS_INDEX_CACHE_KEY = "apps:index";
 const APPS_NAMES_CACHE_KEY = "apps:names";
+const APPS_DOMAINS_CACHE_KEY = "apps:domains";
 const DATABASES_LIST_CACHE_KEY = "databases:list";
+const DATABASES_INDEX_CACHE_KEY = "databases:index";
 const POSTGRES_NAMES_CACHE_KEY = "postgres:names";
 
 // ── Client ─────────────────────────────────────────────────────────────────
@@ -93,6 +121,7 @@ export class DokkuClient {
   private databasesListRefresh: Promise<DatabaseListInfo[]> | null = null;
   private backgroundRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private backgroundRefreshRunning = false;
+  private appsStatusCooldownUntil = 0;
 
   constructor(private cfg: SshConfig) {
     this.pool = new SshPool(cfg);
@@ -166,14 +195,51 @@ export class DokkuClient {
 
   // ── Apps ────────────────────────────────────────────────────────────────
 
+  private isTimeoutError(err: unknown): boolean {
+    return err instanceof Error && /timed out/i.test(err.message);
+  }
+
+  private appDomainsCacheKey(name: string): string {
+    return `${APPS_DOMAINS_CACHE_KEY}:${name}`;
+  }
+
+  private cachedDomainsFor(name: string): string[] | undefined {
+    const cached = this.getCached<string[]>(this.appDomainsCacheKey(name));
+    if (cached) return cached;
+
+    return this.getCached<Map<string, string[]>>(APPS_DOMAINS_CACHE_KEY)?.get(name);
+  }
+
+  private setCachedDomainsFor(name: string, domains: string[]): string[] {
+    const cachedDomains = this.setCache(this.appDomainsCacheKey(name), domains, APPS_DOMAINS_CACHE_TTL_MS);
+    this.patchCachedApp(name, { domains: cachedDomains });
+    return cachedDomains;
+  }
+
+  private invalidateDomainsCache(name?: string): void {
+    this.cache.delete(APPS_DOMAINS_CACHE_KEY);
+    if (name) {
+      this.cache.delete(this.appDomainsCacheKey(name));
+      return;
+    }
+
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${APPS_DOMAINS_CACHE_KEY}:`)) this.cache.delete(key);
+    }
+  }
+
   private appTypeFor(name: string, known?: AppInfo): string {
     return this.getCached<string>(`apps:type:${name}`) ?? known?.appType ?? "";
   }
 
-  private appFromName(name: string, known?: AppInfo): AppInfo {
+  private appFromName(name: string, known?: AppInfo, fallbackStatus: AppStatus = "loading"): AppInfo {
+    const status = known?.status === "loading" && fallbackStatus === "stale"
+      ? "stale"
+      : known?.status ?? fallbackStatus;
+
     return {
       name,
-      status: known?.status ?? "loading",
+      status,
       deployed: known?.deployed ?? false,
       processCount: known?.processCount ?? 0,
       processTypes: known ? [...known.processTypes] : [],
@@ -188,9 +254,9 @@ export class DokkuClient {
       ?? this.getStaleCached<AppInfo[]>(APPS_INDEX_CACHE_KEY);
   }
 
-  private mergeAppsFromNames(names: string[], knownApps?: AppInfo[]): AppInfo[] {
+  private mergeAppsFromNames(names: string[], knownApps?: AppInfo[], fallbackStatus: AppStatus = "loading"): AppInfo[] {
     const knownByName = new Map((knownApps ?? []).map((app) => [app.name, app]));
-    return names.map((name) => this.appFromName(name, knownByName.get(name)));
+    return names.map((name) => this.appFromName(name, knownByName.get(name), fallbackStatus));
   }
 
   private appFromPsBlock(name: string, block: string, known?: AppInfo): AppInfo {
@@ -264,16 +330,17 @@ export class DokkuClient {
     return this.appsListFromNames();
   }
 
-  private async appsListFromNames(): Promise<AppInfo[]> {
+  private async appsListFromNames(options: { refresh?: boolean; fallbackStatus?: AppStatus } = {}): Promise<AppInfo[]> {
+    const { refresh = true, fallbackStatus = "loading" } = options;
     const fallback = this.appsFallback();
     try {
       const names = await this.appsListNames();
       const apps = this.setCache(
         APPS_INDEX_CACHE_KEY,
-        this.mergeAppsFromNames(names, fallback),
+        this.mergeAppsFromNames(names, fallback, fallbackStatus),
         FAST_APPS_CACHE_TTL_MS,
       );
-      this.refreshAppsListInBackground();
+      if (refresh) this.refreshAppsListInBackground();
       return apps;
     } catch (err) {
       if (fallback) return fallback;
@@ -306,43 +373,84 @@ export class DokkuClient {
     const fallback = this.appsFallback();
     let apps: AppInfo[];
 
+    if (Date.now() < this.appsStatusCooldownUntil && fallback) {
+      return fallback;
+    }
+
     try {
       // Single SSH call to get all app statuses at once. Keep this bounded so
       // a slow Dokku status report does not block the dashboard page load.
       const out = await this.exec(["ps:report"], Math.min(this.cfg.timeoutMs, APPS_STATUS_TIMEOUT_MS));
       apps = this.parseAppsReport(out, fallback);
+      this.appsStatusCooldownUntil = 0;
     } catch (err) {
+      if (this.isTimeoutError(err)) {
+        this.appsStatusCooldownUntil = Date.now() + APPS_STATUS_TIMEOUT_COOLDOWN_MS;
+        this.markLoadingAppsStale();
+      }
       try {
-        return await this.appsListFromNames();
+        return await this.refreshAppsListFromPerAppReports(fallback);
       } catch {
-        if (fallback) return fallback;
-        throw err;
+        try {
+          return await this.appsListFromNames({ refresh: false, fallbackStatus: "stale" });
+        } catch {
+          if (fallback) return fallback;
+          throw err;
+        }
       }
     }
 
+    return this.storeAppsListWithDomainRefresh(apps);
+  }
+
+  private async refreshAppsListFromPerAppReports(fallback?: AppInfo[]): Promise<AppInfo[]> {
+    const names = await this.appsListNames();
+    const knownByName = new Map((fallback ?? []).map((app) => [app.name, app]));
+    const apps = await mapConcurrent(names, APP_STATUS_FALLBACK_CONCURRENCY, async (name) => {
+      const known = knownByName.get(name);
+      try {
+        const out = await this.exec(
+          ["ps:report", name],
+          Math.min(this.cfg.timeoutMs, APP_STATUS_FALLBACK_TIMEOUT_MS),
+        );
+        return this.parseAppsReport(out, known ? [known] : [])[0] ?? this.appFromName(name, known, "stale");
+      } catch {
+        return this.appFromName(name, known, "stale");
+      }
+    });
+
+    return this.storeAppsListWithDomainRefresh(apps);
+  }
+
+  private async withDomains(apps: AppInfo[]): Promise<AppInfo[]> {
     // Fetch all domains in a single SSH call to avoid channel exhaustion.
     try {
       const domainsMap = await this.domainsReportAll(Math.min(this.cfg.timeoutMs, APPS_DOMAIN_TIMEOUT_MS));
-      for (const app of apps) {
-        app.domains = domainsMap.get(app.name) ?? [];
-      }
+      return apps.map((app) => ({ ...app, domains: domainsMap.get(app.name) ?? app.domains }));
     } catch {
-      // Keep stale domains from the previous cache if batch call fails.
+      return apps;
     }
+  }
 
+  private storeAppsList(apps: AppInfo[]): AppInfo[] {
     this.setCache(APPS_LIST_CACHE_KEY, apps);
     this.refreshAppTypesInBackground(apps);
     return apps;
+  }
+
+  private async storeAppsListWithDomainRefresh(apps: AppInfo[]): Promise<AppInfo[]> {
+    const stored = this.storeAppsList(apps);
+    const withDomains = await this.withDomains(stored);
+    return withDomains === stored ? stored : this.storeAppsList(withDomains);
   }
 
   private refreshAppTypesInBackground(apps: AppInfo[]): void {
     if (this.appTypeRefresh) return;
 
     this.appTypeRefresh = (async () => {
-      for (const app of apps) {
+      const missing = apps.filter((app) => this.getCached<string>(`apps:type:${app.name}`) === undefined);
+      await mapConcurrent(missing, APP_TYPE_REFRESH_CONCURRENCY, async (app) => {
         const cacheKey = `apps:type:${app.name}`;
-        if (this.getCached<string>(cacheKey) !== undefined) continue;
-
         try {
           const val = (await this.exec(
             ["config:get", app.name, "DOKKU_APP_TYPE"],
@@ -353,10 +461,41 @@ export class DokkuClient {
         } catch {
           // keep stale or empty app type
         }
-      }
+      });
     })().finally(() => {
       this.appTypeRefresh = null;
     });
+  }
+
+  private async refreshApp(name: string): Promise<AppInfo> {
+    const fallback = this.appsFallback()?.find((app) => app.name === name);
+    const out = await this.exec(
+      ["ps:report", name],
+      Math.min(this.cfg.timeoutMs, APP_STATUS_FALLBACK_TIMEOUT_MS),
+    );
+    const app = this.parseAppsReport(out, fallback ? [fallback] : [])[0] ?? this.appFromName(name, fallback, "stale");
+    app.domains = await this.domainsReport(name).catch(() => fallback?.domains ?? []);
+    this.upsertCachedApp(app);
+    this.refreshAppTypesInBackground([app]);
+    return app;
+  }
+
+  private refreshAppInBackground(name: string): void {
+    this.refreshApp(name).catch((err) => {
+      console.error(`Background app refresh failed for ${name}:`, err instanceof Error ? err.message : err);
+      const current = this.appsFallback()?.find((app) => app.name === name);
+      if (current?.status === "loading") this.patchCachedApp(name, { status: "stale" });
+    });
+  }
+
+  private markLoadingAppsStale(): void {
+    const mark = (apps: AppInfo[]) =>
+      apps.map((app) => (app.status === "loading" ? { ...app, status: "stale" as const } : app));
+
+    for (const key of [APPS_LIST_CACHE_KEY, APPS_INDEX_CACHE_KEY]) {
+      const entry = this.cache.get(key);
+      if (entry) entry.data = mark(entry.data as AppInfo[]);
+    }
   }
 
   private patchCachedApp(name: string, patch: Partial<AppInfo>): void {
@@ -366,6 +505,22 @@ export class DokkuClient {
     for (const key of [APPS_LIST_CACHE_KEY, APPS_INDEX_CACHE_KEY]) {
       const entry = this.cache.get(key);
       if (entry) entry.data = patchList(entry.data as AppInfo[]);
+    }
+  }
+
+  private upsertCachedApp(app: AppInfo): void {
+    const upsert = (apps: AppInfo[]) => {
+      const existingIndex = apps.findIndex((candidate) => candidate.name === app.name);
+      if (existingIndex === -1) return [...apps, app];
+
+      const next = [...apps];
+      next[existingIndex] = app;
+      return next;
+    };
+
+    for (const key of [APPS_LIST_CACHE_KEY, APPS_INDEX_CACHE_KEY]) {
+      const entry = this.cache.get(key);
+      if (entry) entry.data = upsert(entry.data as AppInfo[]);
     }
   }
 
@@ -413,8 +568,8 @@ export class DokkuClient {
     return out;
   }
 
-  async appsReport(name: string): Promise<string> {
-    return this.exec(["ps:report", name]);
+  async appsReport(name: string, timeoutMs = this.cfg.timeoutMs): Promise<string> {
+    return this.exec(["ps:report", name], timeoutMs);
   }
 
   async appInfo(name: string, options: { domains?: string[]; appType?: string } = {}): Promise<AppInfo> {
@@ -424,6 +579,7 @@ export class DokkuClient {
 
     app.domains = options.domains ?? fallback?.domains ?? [];
     app.appType = options.appType ?? fallback?.appType ?? "";
+    this.upsertCachedApp(app);
     return app;
   }
 
@@ -432,28 +588,28 @@ export class DokkuClient {
   async psStart(name: string): Promise<string> {
     const out = await this.exec(["ps:start", name]);
     this.patchCachedApp(name, { status: "running", deployed: true });
-    this.refreshAppsListInBackground();
+    this.refreshAppInBackground(name);
     return out;
   }
 
   async psStop(name: string): Promise<string> {
     const out = await this.exec(["ps:stop", name]);
     this.patchCachedApp(name, { status: "stopped", deployed: true, processCount: 0 });
-    this.refreshAppsListInBackground();
+    this.refreshAppInBackground(name);
     return out;
   }
 
   async psRestart(name: string): Promise<string> {
     const out = await this.exec(["ps:restart", name]);
     this.patchCachedApp(name, { status: "loading" });
-    this.refreshAppsListInBackground();
+    this.refreshAppInBackground(name);
     return out;
   }
 
   async psRebuild(name: string): Promise<string> {
     const out = await this.exec(["ps:rebuild", name]);
     this.patchCachedApp(name, { status: "loading" });
-    this.refreshAppsListInBackground();
+    this.refreshAppInBackground(name);
     return out;
   }
 
@@ -470,7 +626,7 @@ export class DokkuClient {
     }
     const out = await this.exec(args);
     this.patchCachedApp(name, { status: "loading" });
-    this.refreshAppsListInBackground();
+    this.refreshAppInBackground(name);
     return out;
   }
 
@@ -519,8 +675,9 @@ export class DokkuClient {
     }
     const out = await this.exec(args);
     if (Object.prototype.hasOwnProperty.call(vars, "DOKKU_APP_TYPE")) {
-      this.invalidateCache("apps:");
-      this.refreshAppsListInBackground();
+      const appType = vars.DOKKU_APP_TYPE;
+      this.setCache(`apps:type:${name}`, appType, APP_TYPE_CACHE_TTL_MS);
+      this.patchCachedApp(name, { appType });
     }
     return out;
   }
@@ -535,8 +692,8 @@ export class DokkuClient {
     args.push(name, ...keys);
     const out = await this.exec(args);
     if (keys.includes("DOKKU_APP_TYPE")) {
-      this.invalidateCache("apps:");
-      this.refreshAppsListInBackground();
+      this.cache.delete(`apps:type:${name}`);
+      this.patchCachedApp(name, { appType: "" });
     }
     return out;
   }
@@ -545,6 +702,9 @@ export class DokkuClient {
 
   /** Fetch domains for all apps in a single SSH call. */
   async domainsReportAll(timeoutMs = this.cfg.timeoutMs): Promise<Map<string, string[]>> {
+    const cached = this.getCached<Map<string, string[]>>(APPS_DOMAINS_CACHE_KEY);
+    if (cached) return cached;
+
     const out = await this.exec(["domains:report"], timeoutMs);
     const result = new Map<string, string[]>();
     let currentApp: string | null = null;
@@ -562,10 +722,16 @@ export class DokkuClient {
         result.set(currentApp, domains);
       }
     }
-    return result;
+    for (const [name, domains] of result) {
+      this.setCache(this.appDomainsCacheKey(name), domains, APPS_DOMAINS_CACHE_TTL_MS);
+    }
+    return this.setCache(APPS_DOMAINS_CACHE_KEY, result, APPS_DOMAINS_CACHE_TTL_MS);
   }
 
   async domainsReport(name: string): Promise<string[]> {
+    const cached = this.cachedDomainsFor(name);
+    if (cached) return cached;
+
     const out = await this.exec(["domains:report", name]);
     const domains: string[] = [];
     for (const line of out.trim().split("\n")) {
@@ -579,20 +745,22 @@ export class DokkuClient {
         );
       }
     }
-    return domains;
+    return this.setCachedDomainsFor(name, domains);
   }
 
   async domainsAdd(name: string, domain: string): Promise<string> {
     const out = await this.exec(["domains:add", name, domain]);
-    this.invalidateCache("apps:");
-    this.refreshAppsListInBackground();
+    const domains = this.cachedDomainsFor(name) ?? this.appsFallback()?.find((app) => app.name === name)?.domains ?? [];
+    this.invalidateDomainsCache(name);
+    this.setCachedDomainsFor(name, Array.from(new Set([...domains, domain])));
     return out;
   }
 
   async domainsRemove(name: string, domain: string): Promise<string> {
     const out = await this.exec(["domains:remove", name, domain]);
-    this.invalidateCache("apps:");
-    this.refreshAppsListInBackground();
+    const domains = this.cachedDomainsFor(name) ?? this.appsFallback()?.find((app) => app.name === name)?.domains ?? [];
+    this.invalidateDomainsCache(name);
+    this.setCachedDomainsFor(name, domains.filter((candidate) => candidate !== domain));
     return out;
   }
 
@@ -681,11 +849,31 @@ export class DokkuClient {
     return this.exec(["postgres:info", dbName]);
   }
 
+  private databasesFallback(): DatabaseListInfo[] | undefined {
+    return this.getStaleCached<DatabaseListInfo[]>(DATABASES_LIST_CACHE_KEY)
+      ?? this.getStaleCached<DatabaseListInfo[]>(DATABASES_INDEX_CACHE_KEY);
+  }
+
+  private databaseFromName(name: string, known?: DatabaseListInfo, fallbackSize = "checking"): DatabaseListInfo {
+    return {
+      name,
+      links: known ? [...known.links] : [],
+      size: known?.size === "checking" && fallbackSize !== "checking" ? fallbackSize : known?.size ?? fallbackSize,
+      sizeBytes: known?.sizeBytes ?? 0,
+    };
+  }
+
   async databasesListFast(): Promise<DatabaseListInfo[]> {
     const cached = this.getCached<DatabaseListInfo[]>(DATABASES_LIST_CACHE_KEY);
     if (cached) return cached;
 
-    const stale = this.getStaleCached<DatabaseListInfo[]>(DATABASES_LIST_CACHE_KEY);
+    const cachedIndex = this.getCached<DatabaseListInfo[]>(DATABASES_INDEX_CACHE_KEY);
+    if (cachedIndex) {
+      this.refreshDatabasesListInBackground();
+      return cachedIndex;
+    }
+
+    const stale = this.databasesFallback();
     if (stale) {
       this.refreshDatabasesListInBackground();
       return stale;
@@ -693,7 +881,11 @@ export class DokkuClient {
 
     const names = await this.postgresList();
     this.refreshDatabasesListInBackground();
-    return names.map((name) => ({ name, links: [], size: "checking", sizeBytes: 0 }));
+    return this.setCache(
+      DATABASES_INDEX_CACHE_KEY,
+      names.map((name) => this.databaseFromName(name)),
+      FAST_DATABASES_CACHE_TTL_MS,
+    );
   }
 
   async databasesList(): Promise<DatabaseListInfo[]> {
@@ -717,15 +909,25 @@ export class DokkuClient {
   }
 
   private async refreshDatabasesList(): Promise<DatabaseListInfo[]> {
+    const fallback = this.databasesFallback();
     const names = await this.postgresList();
-    const databases = await Promise.all(
-      names.map(async (name) => {
-        const [links, size] = await Promise.all([
-          this.postgresLinks(name),
-          this.postgresDbSize(name),
-        ]);
-        return { name, links, size: size.pretty, sizeBytes: size.bytes };
-      }),
+
+    const fallbackByName = new Map((fallback ?? []).map((db) => [db.name, db]));
+    const databases = await mapConcurrent(
+      names,
+      DATABASE_REFRESH_CONCURRENCY,
+      async (name) => {
+        const fallback = fallbackByName.get(name);
+        try {
+          const [links, size] = await Promise.all([
+            this.postgresLinks(name),
+            this.postgresDbSize(name),
+          ]);
+          return { name, links, size: size.pretty, sizeBytes: size.bytes };
+        } catch {
+          return this.databaseFromName(name, fallback, "-");
+        }
+      },
     );
 
     return this.setCache(DATABASES_LIST_CACHE_KEY, databases);
