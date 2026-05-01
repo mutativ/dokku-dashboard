@@ -16,6 +16,9 @@ function groupAppsByType(apps: AppInfo[]): Array<{ type: string; apps: AppInfo[]
 }
 
 function rowActions(app: AppInfo, enableDestructive: boolean) {
+  if (app.status === "loading") {
+    return html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">checking</span>`;
+  }
   if (app.status === "not deployed") {
     return html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">—</span>`;
   }
@@ -50,7 +53,7 @@ function rowActions(app: AppInfo, enableDestructive: boolean) {
 
 function appRow(app: AppInfo, enableDestructive: boolean) {
   return html`
-    <tr>
+    <tr class="${app.status === "loading" ? "dk-row-loading" : ""}">
       <td>
         <a class="dk-app-name" href="/apps/${app.name}">${app.name}</a>
         ${app.domains.length > 0
@@ -63,9 +66,14 @@ function appRow(app: AppInfo, enableDestructive: boolean) {
   `;
 }
 
-export function appsListRows(apps: AppInfo[], enableDestructiveActions = true) {
+function hasLoadingApps(apps: AppInfo[]) {
+  return apps.some((app) => app.status === "loading");
+}
+
+export function appsListRows(apps: AppInfo[], enableDestructiveActions = true, pollWhenLoading = false) {
   const groups = groupAppsByType(apps);
-  return html`${groups.map(
+  return html`
+    ${groups.map(
     (group) => html`
       <tr class="dk-group-row">
         <td colspan="3">
@@ -75,7 +83,19 @@ export function appsListRows(apps: AppInfo[], enableDestructiveActions = true) {
       </tr>
       ${group.apps.map((app) => appRow(app, enableDestructiveActions))}
     `,
-  )}`;
+  )}
+    ${pollWhenLoading && hasLoadingApps(apps)
+      ? html`
+          <tr class="dk-refresh-row"
+              hx-get="/apps?partial=rows"
+              hx-trigger="load delay:2s"
+              hx-target="#app-rows"
+              hx-swap="innerHTML">
+            <td colspan="3"></td>
+          </tr>
+        `
+      : html``}
+  `;
 }
 
 export function appsListErrorRows(message: string) {

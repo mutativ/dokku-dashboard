@@ -158,6 +158,10 @@ export class MockDokkuClient extends DokkuClient {
     console.log("[mock] warmup skipped");
   }
 
+  override startBackgroundRefresh(): () => void {
+    return () => {};
+  }
+
   override async appsList(): Promise<AppInfo[]> {
     return MOCK_APPS;
   }
@@ -340,6 +344,12 @@ export class MockDokkuClient extends DokkuClient {
 
   override async postgresLinks(dbName: string): Promise<string[]> {
     return dbName === "app-db" ? ["api-server", "api-worker", "api-cron", "staging-api", "staging-worker"] : [];
+  }
+
+  override async postgresDbSize(dbName: string): Promise<{ bytes: number; pretty: string }> {
+    return dbName === "app-db"
+      ? { bytes: 42_000_000, pretty: "42 MB" }
+      : { bytes: 8_400_000, pretty: "8.4 MB" };
   }
 
   override async postgresConnectionInfo(_dbName: string): Promise<string> {

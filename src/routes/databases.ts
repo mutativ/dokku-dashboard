@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AppBindings } from "../server.js";
 import { layout } from "../views/layout.js";
-import { databasesListPage } from "../views/pages/databases-list.js";
+import { databasesListPage, databasesListRows } from "../views/pages/databases-list.js";
 import { databaseDetailPage } from "../views/pages/database-detail.js";
 import { alert } from "../views/components/alert.js";
 import { nameSchema } from "../lib/validation.js";
@@ -21,24 +21,18 @@ export function databasesRoutes() {
 
   app.get("/", async (c) => {
     const dokku = c.get("dokku");
+    const partial = c.req.query("partial");
     try {
-      const names = await dokku.postgresList();
-      const apps = await dokku.appsListNames();
-
-      const databases = await Promise.all(
-        names.map(async (name) => {
-          const [links, size] = await Promise.all([
-            dokku.postgresLinks(name),
-            dokku.postgresDbSize(name),
-          ]);
-          return { name, links, size: size.pretty, sizeBytes: size.bytes };
-        }),
-      );
-
+      const [databases, apps] = await Promise.all([
+        dokku.databasesListFast(),
+        dokku.appsListNames(),
+      ]);
       const totalBytes = databases.reduce((sum, db) => sum + db.sizeBytes, 0);
-      const totalSize = formatBytes(totalBytes);
+      const totalSize = databases.some((db) => db.size === "checking") ? undefined : formatBytes(totalBytes);
+      const canMutate = c.get("env").ENABLE_DESTRUCTIVE_ACTIONS;
 
-      return c.html(layout("Databases", databasesListPage(databases, apps, c.get("env").ENABLE_DESTRUCTIVE_ACTIONS, totalSize), "/databases", c.get("userEmail")));
+      if (partial === "rows") return c.html(databasesListRows(databases, canMutate, true));
+      return c.html(layout("Databases", databasesListPage(databases, apps, canMutate, totalSize), "/databases", c.get("userEmail")));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to list databases";
       return c.html(layout("Databases", alert("error", message), "/databases", c.get("userEmail")));

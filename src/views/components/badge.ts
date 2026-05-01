@@ -1,6 +1,8 @@
 import { html } from "hono/html";
+import type { AppStatus } from "../../lib/dokku.js";
 
-const statusMap: Record<string, { label: string; cls: string; dot: boolean }> = {
+const statusMap: Record<AppStatus, { label: string; cls: string; dot: boolean; spinner?: boolean }> = {
+  loading:        { label: "checking",     cls: "dk-pill dk-pill-muted dk-pill-loading", dot: false, spinner: true },
   running:        { label: "running",      cls: "dk-pill dk-pill-ok",    dot: true  },
   stopped:        { label: "stopped",      cls: "dk-pill dk-pill-warn",  dot: false },
   deployed:       { label: "deployed",     cls: "dk-pill dk-pill-accent", dot: false },
@@ -10,8 +12,8 @@ const statusMap: Record<string, { label: string; cls: string; dot: boolean }> = 
 };
 
 export function statusBadge(status: string) {
-  const m = statusMap[status] ?? statusMap.unknown;
-  return html`<span class="${m.cls}">${m.dot ? html`<span class="dk-pill-dot"></span>` : ""}${m.label}</span>`;
+  const m = statusMap[status as AppStatus] ?? statusMap.unknown;
+  return html`<span class="${m.cls}">${m.spinner ? html`<span class="dk-pill-spinner"></span>` : ""}${m.dot ? html`<span class="dk-pill-dot"></span>` : ""}${m.label}</span>`;
 }
 
 export function processBadge(type: string, count: number) {

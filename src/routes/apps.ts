@@ -56,9 +56,9 @@ export function appsRoutes() {
     const dokku = c.get("dokku");
     const partial = c.req.query("partial");
     try {
-      const apps = partial === "rows" ? await dokku.appsList() : await dokku.appsListFast();
+      const apps = await dokku.appsListFast();
       const canMutate = mutationsEnabled(c);
-      if (partial === "rows") return c.html(appsListRows(apps, canMutate));
+      if (partial === "rows") return c.html(appsListRows(apps, canMutate, true));
       return c.html(layout("Apps", appsListPage(apps, canMutate), "/apps", c.get("userEmail")));
     } catch (err) {
       const message = friendlyAppsError(err);

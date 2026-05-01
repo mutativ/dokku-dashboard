@@ -39,6 +39,10 @@ export function createApp(env: DashboardEnv) {
 
   // Pre-warm SSH connection and cache in background
   dokku.warmup();
+  const stopBackgroundRefresh = dokku.startBackgroundRefresh();
+  process.once("SIGINT", stopBackgroundRefresh);
+  process.once("SIGTERM", stopBackgroundRefresh);
+  process.once("exit", stopBackgroundRefresh);
 
   app.use("*", logger());
 

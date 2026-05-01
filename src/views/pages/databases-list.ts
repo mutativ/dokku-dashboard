@@ -34,21 +34,6 @@ export function databasesListPage(
         </div>
       `;
 
-  const rowActions = (dbName: string) =>
-    enableDestructiveActions
-      ? html`
-          <div class="dk-action-row">
-            <button onclick="openLinkModal('${dbName}')" class="dk-actbtn dk-actbtn-accent">Link</button>
-            <button onclick="document.getElementById('destroy-db-${dbName}').classList.remove('hidden')" class="dk-actbtn dk-actbtn-bad">Destroy</button>
-          </div>
-        `
-      : html`
-          <div class="dk-action-row">
-            ${readonlyChip("Link",    "accent")}
-            ${readonlyChip("Destroy", "bad")}
-          </div>
-        `;
-
   return html`
     ${pageHeader("Databases", headerActions, sub)}
     ${banner}
@@ -66,26 +51,8 @@ export function databasesListPage(
                   <th class="al-r" style="width:18%">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                ${databases.map((db) => html`
-                  <tr>
-                    <td>
-                      <a class="dk-app-name" href="/databases/${db.name}">${db.name}</a>
-                      <div class="dk-app-domains">postgres</div>
-                    </td>
-                    <td>
-                      ${db.links.length > 0
-                        ? html`
-                            <div class="dk-taglist">
-                              ${db.links.map((l) => html`<a href="/apps/${l}" class="dk-tag" title="${l}">${l}</a>`)}
-                            </div>
-                          `
-                        : html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">—</span>`}
-                    </td>
-                    <td style="font-family:var(--font-mono);font-size:12px;color:var(--ink-2)">${db.size}</td>
-                    <td style="text-align:right">${rowActions(db.name)}</td>
-                  </tr>
-                `)}
+              <tbody id="database-rows" hx-get="/databases?partial=rows" hx-trigger="load delay:250ms, refreshDatabaseList from:body" hx-swap="innerHTML">
+                ${databasesListRows(databases, enableDestructiveActions)}
               </tbody>
             </table>
           </div>
@@ -150,6 +117,67 @@ export function databasesListPage(
               document.getElementById('link-modal').classList.remove('hidden');
             }
           </script>
+        `
+      : html``}
+  `;
+}
+
+function databaseRowActions(dbName: string, enableDestructiveActions: boolean) {
+  return enableDestructiveActions
+    ? html`
+        <div class="dk-action-row">
+          <button onclick="openLinkModal('${dbName}')" class="dk-actbtn dk-actbtn-accent">Link</button>
+          <button onclick="document.getElementById('destroy-db-${dbName}').classList.remove('hidden')" class="dk-actbtn dk-actbtn-bad">Destroy</button>
+        </div>
+      `
+    : html`
+        <div class="dk-action-row">
+          ${readonlyChip("Link",    "accent")}
+          ${readonlyChip("Destroy", "bad")}
+        </div>
+      `;
+}
+
+function hasLoadingDatabases(databases: Array<{ size: string }>) {
+  return databases.some((db) => db.size === "checking");
+}
+
+export function databasesListRows(
+  databases: Array<{ name: string; links: string[]; size: string }>,
+  enableDestructiveActions = true,
+  pollWhenLoading = false,
+) {
+  return html`
+    ${databases.map((db) => html`
+      <tr class="${db.size === "checking" ? "dk-row-loading" : ""}">
+        <td>
+          <a class="dk-app-name" href="/databases/${db.name}">${db.name}</a>
+          <div class="dk-app-domains">postgres</div>
+        </td>
+        <td>
+          ${db.links.length > 0
+            ? html`
+                <div class="dk-taglist">
+                  ${db.links.map((l) => html`<a href="/apps/${l}" class="dk-tag" title="${l}">${l}</a>`)}
+                </div>
+              `
+            : html`<span style="color:var(--ink-4);font-size:12px;font-family:var(--font-mono)">—</span>`}
+        </td>
+        <td style="font-family:var(--font-mono);font-size:12px;color:var(--ink-2)">
+          ${db.size === "checking" ? html`<span class="dk-pill dk-pill-muted dk-pill-loading"><span class="dk-pill-spinner"></span>checking</span>` : db.size}
+        </td>
+        <td style="text-align:right">${databaseRowActions(db.name, enableDestructiveActions)}</td>
+      </tr>
+    `)}
+    ${pollWhenLoading && hasLoadingDatabases(databases)
+      ? html`
+          <tr class="dk-refresh-row"
+              hx-get="/databases?partial=rows"
+              hx-trigger="load delay:2s"
+              hx-target="#database-rows"
+              hx-swap="innerHTML">
+            <td colspan="4"></td>
+          </tr>
         `
       : html``}
   `;
